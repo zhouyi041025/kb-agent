@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from kb_agent.config import AppConfig  # noqa: E402
-from kb_agent.embedder import HashingEmbedder  # noqa: E402
+from kb_agent.embedder import HashingEmbedder, build_embedder  # noqa: E402
 from kb_agent.index import KnowledgeIndex  # noqa: E402
 from kb_agent.ingest import build_chunks, load_documents  # noqa: E402
 from kb_agent.llm import StubLLM  # noqa: E402
@@ -44,10 +44,12 @@ def load_dataset(path: Path) -> list[dict]:
     return items
 
 
-def build_index(knowledge_dir: Path, dim: int = 4096, fusion_weights=None) -> KnowledgeIndex:
+def build_index(
+    knowledge_dir: Path, dim: int = 4096, fusion_weights=None, embedder=None
+) -> KnowledgeIndex:
     documents = load_documents(knowledge_dir)
     chunks = build_chunks(documents, strategy="recursive")
-    index = KnowledgeIndex.build(chunks, HashingEmbedder(dim=dim))
+    index = KnowledgeIndex.build(chunks, embedder or HashingEmbedder(dim=dim))
     if fusion_weights:
         index.fusion_weights = list(fusion_weights)
     return index
@@ -206,6 +208,17 @@ def main() -> int:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--min-confidence", type=float, default=0.45)
     parser.add_argument("--embedding-dim", type=int, default=4096)
+    parser.add_argument(
+        "--embedding-provider",
+        choices=["hashing", "openai"],
+        default="hashing",
+        help="hashing=离线确定性（默认，报告可复现）；openai=真实语义向量（读 .env 里的 Key，结果随模型版本漂移）",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        default="",
+        help="真实语义向量的模型名，例如 embedding-3；选了 openai 就必须给",
+    )
     parser.add_argument("--sweep", action="store_true", help="额外跑一次拒答阈值扫参")
     parser.add_argument("--sensitivity", action="store_true", help="额外跑向量维度与融合权重消融")
     parser.add_argument("--out", default=str(ROOT / "eval" / "report.md"))
@@ -213,11 +226,21 @@ def main() -> int:
 
     dataset = load_dataset(Path(args.dataset))
     knowledge_dir = Path(args.knowledge_dir)
-    index = build_index(knowledge_dir, dim=args.embedding_dim)
+    embedder = None
+    if args.embedding_provider == "openai":
+        if not args.embedding_model:
+            raise SystemExit("--embedding-provider openai 需要同时给 --embedding-model（例如 embedding-3）")
+        config = AppConfig.from_env()
+        config.embedding.provider = "openai"
+        config.embedding.model = args.embedding_model
+        embedder = build_embedder(
+            config.embedding, base_url=config.llm.base_url, api_key=config.llm.api_key
+        )
+    index = build_index(knowledge_dir, dim=args.embedding_dim, embedder=embedder)
     total_docs = len({chunk.doc_id for chunk in index.chunks})
     print(
         f"知识库：{total_docs} 篇文档 / {len(index.chunks)} 个片段；"
-        f"评测集：{len(dataset)} 条查询；向量维度：{args.embedding_dim}"
+        f"评测集：{len(dataset)} 条查询；向量模型：{index.embedder.name}"
     )
 
     results = []
@@ -237,7 +260,9 @@ def main() -> int:
     sensitivity: list[dict] = []
     fusion_rows: list[dict] = []
     if args.sensitivity:
-        for dim in (512, 2048, 4096):
+        # 维度消融只对哈希向量有意义：真实语义向量的维度由模型固定，改不了
+        dims = (512, 2048, 4096) if embedder is None else ()
+        for dim in dims:
             candidate = build_index(knowledge_dir, dim=dim)
             sensitivity.append(
                 {
@@ -250,7 +275,9 @@ def main() -> int:
                 }
             )
         for weights in ([1.0, 1.0], [1.0, 2.0], [2.0, 1.0]):
-            candidate = build_index(knowledge_dir, dim=args.embedding_dim, fusion_weights=weights)
+            candidate = build_index(
+                knowledge_dir, dim=args.embedding_dim, fusion_weights=weights, embedder=embedder
+            )
             plain = evaluate(candidate, dataset, "hybrid", False, args.top_k, args.min_confidence)
             reranked = evaluate(candidate, dataset, "hybrid", True, args.top_k, args.min_confidence)
             fusion_rows.append(
@@ -274,14 +301,21 @@ def main() -> int:
         f"- 知识库：{total_docs} 篇文档，切分为 {len(index.chunks)} 个片段（recursive 策略）",
         f"- 评测集：{len(dataset)} 条查询，其中可回答 {sum(1 for i in dataset if i['answerable'])} 条，"
         f"不可回答 {sum(1 for i in dataset if not i['answerable'])} 条",
-        f"- 向量模型：{index.embedder.name}（离线确定性）｜生成模型：stub-extractive（离线抽取式）",
+        f"- 向量模型：{index.embedder.name}"
+        + ("（离线确定性）" if embedder is None else "（真实语义向量，需要 API Key，数字随模型版本漂移）")
+        + "｜生成模型：stub-extractive（离线抽取式）",
         "- 评测命令：`python eval/run_eval.py"
         + f" --top-k {args.top_k} --min-confidence {args.min_confidence}"
+        + (f" --embedding-provider openai --embedding-model {args.embedding_model}" if embedder else "")
         + (" --sweep" if args.sweep else "")
         + (" --sensitivity" if args.sensitivity else "")
         + "`",
         "",
-        "所有指标均可在无网络、无 API Key 的环境下复现。",
+        (
+            "所有指标均可在无网络、无 API Key 的环境下复现。"
+            if embedder is None
+            else "本次的稠密分支用了真实语义向量，**不可离线复现**；离线基线见不带 `--embedding-provider` 的那次运行。"
+        ),
         "",
         f"## 消融对比（top_k={args.top_k}, 拒答阈值={args.min_confidence}）",
         "",
@@ -309,14 +343,23 @@ def main() -> int:
             "混合检索反而不如纯 BM25；维度提升后稠密分支可用，结论随之改变。"
             "这说明**检索组件的效果不是固定属性，取决于组件的实际质量**，"
             "任何「加一路召回就一定更好」的假设都要用评测推翻或确认。",
+        ]
+    if fusion_rows:
+        lines += [
             "",
             "## 融合权重消融",
             "",
             format_fusion(fusion_rows),
             "",
-            "在本语料上加权融合并未带来稳定增益：两路召回都是词法信号、高度相关，"
-            "融合只是在重新分配同一批候选的名次。要真正拉开差距，需要让两路互补——"
-            "也就是把稠密分支换成真正的语义向量（配置 KB_EMBEDDING_PROVIDER=openai）。",
+            (
+                "在本语料上加权融合并未带来稳定增益：两路召回都是词法信号、高度相关，"
+                "融合只是在重新分配同一批候选的名次。要真正拉开差距，需要让两路互补——"
+                "也就是把稠密分支换成真正的语义向量（`--embedding-provider openai`）。"
+                if embedder is None
+                else "换成语义向量后两路分支不再高度相关，但加权仍然挤不出增益："
+                "等权重已接近最优，把权重压向 BM25 一侧反而下降。"
+                "融合权重能起多大作用，取决于两路分支的质量差距。"
+            ),
             "",
             "> 方法学说明：维度与权重消融在完整评测集上完成，没有留出独立验证集。"
             "50 条查询的规模下这种敏感性分析足以支撑方向性结论，但不适合用来精调超参；"
