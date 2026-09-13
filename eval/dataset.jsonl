@@ -1,0 +1,50 @@
+{"id": "q001", "question": "RAG 的链路分成哪几层？", "gold_docs": ["rag-01-pipeline.md"], "answerable": true}
+{"id": "q002", "question": "为什么说检索层的问题在生成层补不回来？", "gold_docs": ["rag-01-pipeline.md"], "answerable": true}
+{"id": "q003", "question": "文档切分粒度太细会有什么问题？", "gold_docs": ["rag-02-chunking.md"], "answerable": true}
+{"id": "q004", "question": "切分时的重叠窗口一般设多大？", "gold_docs": ["rag-02-chunking.md"], "answerable": true}
+{"id": "q005", "question": "为什么 BM25 和向量检索要一起用？", "gold_docs": ["rag-03-hybrid-search.md"], "answerable": true}
+{"id": "q006", "question": "RRF 融合为什么不用原始分数？", "gold_docs": ["rag-03-hybrid-search.md"], "answerable": true}
+{"id": "q007", "question": "cross-encoder 重排为什么不能替代召回？", "gold_docs": ["rag-04-rerank.md"], "answerable": true}
+{"id": "q008", "question": "没有 GPU 的情况下怎么做重排？", "gold_docs": ["rag-04-rerank.md"], "answerable": true}
+{"id": "q009", "question": "多轮对话里用户问它的默认参数是多少，检索不到怎么处理？", "gold_docs": ["rag-05-query-rewrite.md"], "answerable": true}
+{"id": "q010", "question": "HyDE 是什么，解决什么问题？", "gold_docs": ["rag-05-query-rewrite.md"], "answerable": true}
+{"id": "q011", "question": "换了向量模型以后为什么必须重建索引？", "gold_docs": ["rag-06-embedding.md"], "answerable": true}
+{"id": "q012", "question": "向量模型选型应该看哪些维度？", "gold_docs": ["rag-06-embedding.md"], "answerable": true}
+{"id": "q013", "question": "怎么衡量检索结果的排序质量？", "gold_docs": ["rag-07-evaluation.md"], "answerable": true}
+{"id": "q014", "question": "评测集里为什么要专门放一些知识库回答不了的问题？", "gold_docs": ["rag-07-evaluation.md"], "answerable": true}
+{"id": "q015", "question": "误答率指的是什么？", "gold_docs": ["rag-07-evaluation.md"], "answerable": true}
+{"id": "q016", "question": "什么情况下不应该用 Agent？", "gold_docs": ["agent-01-agent-vs-workflow.md"], "answerable": true}
+{"id": "q017", "question": "怎么判断一个需求该用工作流还是 Agent？", "gold_docs": ["agent-01-agent-vs-workflow.md"], "answerable": true}
+{"id": "q018", "question": "模型是怎么决定调用哪个工具的？", "gold_docs": ["agent-02-function-calling.md"], "answerable": true}
+{"id": "q019", "question": "工具描述里应该写清楚哪些内容？", "gold_docs": ["agent-02-function-calling.md"], "answerable": true}
+{"id": "q020", "question": "Agent 反复调用同一个工具怎么防？", "gold_docs": ["agent-03-reliability.md"], "answerable": true}
+{"id": "q021", "question": "Agent 出问题的时候怎么定位是哪一步错了？", "gold_docs": ["agent-03-reliability.md"], "answerable": true}
+{"id": "q022", "question": "大模型为什么会产生幻觉？", "gold_docs": ["llm-01-hallucination.md"], "answerable": true}
+{"id": "q023", "question": "有哪些工程手段可以降低幻觉？", "gold_docs": ["llm-01-hallucination.md"], "answerable": true}
+{"id": "q024", "question": "知识库问答场景的温度参数应该设多少？", "gold_docs": ["llm-02-sampling.md"], "answerable": true}
+{"id": "q025", "question": "把温度调到零能保证答案正确吗？", "gold_docs": ["llm-02-sampling.md"], "answerable": true}
+{"id": "q026", "question": "KV Cache 为什么能加速推理？", "gold_docs": ["llm-03-context-window.md"], "answerable": true}
+{"id": "q027", "question": "上下文窗口是不是越大越好？", "gold_docs": ["llm-03-context-window.md"], "answerable": true}
+{"id": "q028", "question": "显存占用和哪些因素相关？", "gold_docs": ["llm-03-context-window.md"], "answerable": true}
+{"id": "q029", "question": "什么时候应该微调，什么时候该用 RAG？", "gold_docs": ["llm-04-finetune-vs-rag.md"], "answerable": true}
+{"id": "q030", "question": "RAG 和微调能不能一起用？", "gold_docs": ["llm-04-finetune-vs-rag.md"], "answerable": true}
+{"id": "q031", "question": "首 token 延迟和总延迟分别怎么优化？", "gold_docs": ["ops-01-inference-serving.md"], "answerable": true}
+{"id": "q032", "question": "为什么要用连续批处理？", "gold_docs": ["ops-01-inference-serving.md"], "answerable": true}
+{"id": "q033", "question": "有哪些降低大模型调用成本的办法？", "gold_docs": ["ops-02-cost-control.md"], "answerable": true}
+{"id": "q034", "question": "为什么说控制输出长度比压缩输入更划算？", "gold_docs": ["ops-02-cost-control.md"], "answerable": true}
+{"id": "q035", "question": "模型服务超时以后应该怎么降级？", "gold_docs": ["ops-03-degradation.md"], "answerable": true}
+{"id": "q036", "question": "提示词和模型版本变更要不要走灰度？", "gold_docs": ["ops-03-degradation.md"], "answerable": true}
+{"id": "q037", "question": "知识库文档里藏了恶意指令怎么办？", "gold_docs": ["sec-01-prompt-injection.md"], "answerable": true}
+{"id": "q038", "question": "检索阶段怎么做权限隔离？", "gold_docs": ["sec-01-prompt-injection.md"], "answerable": true}
+{"id": "q039", "question": "混合检索和重排应该先上哪个？", "gold_docs": ["rag-03-hybrid-search.md", "rag-04-rerank.md"], "answerable": true}
+{"id": "q040", "question": "怎么从零搭一套知识库问答的评测集？", "gold_docs": ["rag-07-evaluation.md"], "answerable": true}
+{"id": "q041", "question": "私有化部署要注意哪些安全点？", "gold_docs": ["sec-01-prompt-injection.md"], "answerable": true}
+{"id": "q042", "question": "把召回条数从十条减到五条会有什么影响？", "gold_docs": ["ops-02-cost-control.md"], "answerable": true}
+{"id": "q043", "question": "腾讯云 TKE 的集群怎么扩容？", "gold_docs": [], "answerable": false}
+{"id": "q044", "question": "公司年假一共有多少天？", "gold_docs": [], "answerable": false}
+{"id": "q045", "question": "怎么用 PyTorch 训练一个图像分类模型？", "gold_docs": [], "answerable": false}
+{"id": "q046", "question": "我们的报销流程是什么样的？", "gold_docs": [], "answerable": false}
+{"id": "q047", "question": "Kubernetes 的 Pod 驱逐策略怎么配置？", "gold_docs": [], "answerable": false}
+{"id": "q048", "question": "这个季度的营收目标是多少？", "gold_docs": [], "answerable": false}
+{"id": "q049", "question": "办公电脑应该找谁申请？", "gold_docs": [], "answerable": false}
+{"id": "q050", "question": "MySQL 慢查询具体怎么优化？", "gold_docs": [], "answerable": false}

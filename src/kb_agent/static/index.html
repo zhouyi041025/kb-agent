@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业知识库问答</title>
+<style>
+  :root {
+    --accent: #2f6bff;
+    --accent-soft: #eaf0ff;
+    --ink: #101828;
+    --ink-2: #475467;
+    --ink-3: #8a94a6;
+    --line: #e4e8ef;
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --ok: #12a150;
+    --warn: #b54708;
+    --warn-soft: #fff6ed;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+
+  /* ---------- 侧栏 ---------- */
+  .sidebar {
+    background: var(--card);
+    border-right: 1px solid var(--line);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .brand { display: flex; gap: 12px; align-items: center; }
+  .logo {
+    width: 38px; height: 38px; flex: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    display: grid; place-items: center;
+    font-weight: 700; letter-spacing: .5px;
+  }
+  .brand h1 { font-size: 15px; margin: 0; }
+  .brand p { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-right: 6px; vertical-align: 1px; }
+  .dot.live { background: var(--ok); box-shadow: 0 0 0 3px rgba(18, 161, 80, .16); }
+  .dot.down { background: #d92d20; box-shadow: 0 0 0 3px rgba(217, 45, 32, .16); }
+  .panel h2 {
+    font-size: 13px; color: var(--ink); margin: 0 0 10px; font-weight: 650;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel h2::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); }
+  .panel { display: flex; flex-direction: column; gap: 12px; }
+  .panel + .panel { border-top: 1px solid var(--line); padding-top: 18px; }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: step; display: flex; flex-direction: column; gap: 8px; }
+  .steps li { font-size: 12.5px; color: var(--ink-2); display: flex; gap: 9px; align-items: center; }
+  .steps li::before {
+    counter-increment: step; content: counter(step); flex: none;
+    width: 18px; height: 18px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  }
+  label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  select, input[type="range"] { width: 100%; }
+  select {
+    padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); font-size: 13px; font-family: inherit;
+  }
+  input[type="range"] { accent-color: var(--accent); }
+  .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .switch input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat {
+    background: var(--bg); border-radius: 8px; padding: 8px 10px;
+  }
+  .stat b { display: block; font-size: 16px; font-weight: 650; }
+  .stat span { font-size: 11px; color: var(--ink-3); }
+
+  /* ---------- 主区 ---------- */
+  .chat { display: flex; flex-direction: column; min-width: 0; }
+  .chat-header {
+    padding: 18px 28px; border-bottom: 1px solid var(--line); background: var(--card);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .chat-header h2 { margin: 0; font-size: 16px; }
+  .chat-header p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-2); }
+  button {
+    font-family: inherit; font-size: 14px; cursor: pointer; border: none;
+    border-radius: 9px; transition: background .15s, opacity .15s;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .ghost {
+    background: transparent; color: var(--ink-2); border: 1px solid var(--line);
+    padding: 7px 12px; font-size: 13px;
+  }
+  a.ghost { display: inline-flex; align-items: center; text-decoration: none; }
+  .ghost:hover { background: var(--bg); }
+  .header-actions { display: flex; gap: 8px; flex: none; }
+
+  .messages { flex: 1; overflow-y: auto; padding: 24px 28px 8px; }
+  .empty { max-width: 660px; margin: 5vh auto 0; }
+  .empty .big { font-size: 18px; font-weight: 650; color: var(--ink); margin-bottom: 6px; }
+  .empty .sub { font-size: 13px; color: var(--ink-3); margin-bottom: 20px; }
+  .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .chip {
+    background: var(--card); border: 1px solid var(--line); color: var(--ink-2);
+    padding: 12px 14px; border-radius: 10px; font-size: 13px; text-align: left;
+    display: flex; align-items: center; gap: 10px; line-height: 1.4;
+  }
+  .chip::before { content: "\2192"; color: var(--accent); font-weight: 700; flex: none; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  .msg { max-width: 860px; margin: 0 auto 22px; display: flex; flex-direction: column; gap: 8px; }
+  .msg.user { align-items: flex-end; }
+  .bubble-user {
+    background: var(--accent); color: #fff; padding: 10px 14px; border-radius: 12px 12px 2px 12px;
+    max-width: 70%; white-space: pre-wrap; word-break: break-word;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; width: 100%;
+  }
+  .card.refused { background: var(--warn-soft); border-color: #fedf89; }
+  .answer { white-space: pre-wrap; word-break: break-word; font-size: 14.5px; line-height: 1.75; }
+  .answer strong { font-weight: 650; color: var(--ink); }
+  .answer code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 12.5px;
+    background: var(--bg); border-radius: 4px; padding: 1px 5px;
+  }
+  .answer .cite {
+    color: var(--accent); background: var(--accent-soft); border-radius: 4px;
+    padding: 0 4px; font-size: 11px; font-weight: 600; cursor: pointer; vertical-align: super;
+    margin: 0 1px;
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .pill {
+    font-size: 11.5px; color: var(--ink-2); background: var(--bg);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .pill.ok { color: var(--ok); }
+  .pill.warn { color: var(--warn); }
+
+  .sources { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+  .sources h4 { margin: 0 0 10px; font-size: 13px; color: var(--ink); font-weight: 650; }
+  .source {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+    background: #fff; cursor: pointer;
+  }
+  .source.used { border-color: var(--accent); background: var(--accent-soft); }
+  .source-head { display: flex; align-items: center; gap: 8px; }
+  .rank {
+    flex: none; width: 20px; height: 20px; border-radius: 6px; background: var(--bg);
+    color: var(--ink-2); font-size: 11px; display: grid; place-items: center; font-weight: 600;
+  }
+  .source.used .rank { background: var(--accent); color: #fff; }
+  .source-title { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score-badge {
+    flex: none; font-size: 11px; font-weight: 600; color: var(--ink-2);
+    background: var(--bg); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums;
+  }
+  .source.used .score-badge { background: #fff; color: var(--accent); }
+  .bar { height: 3px; border-radius: 2px; background: var(--line); margin: 7px 0 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .snippet { font-size: 12.5px; color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+             max-height: 3.2em; overflow: hidden; }
+  .source.open .snippet { max-height: none; }
+  .source-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .toggle { flex: none; font-size: 11.5px; color: var(--accent); }
+  .toggle::after { content: "展开全文"; }
+  .source.open .toggle::after { content: "收起"; }
+  .chunk-id { font-size: 11px; color: var(--ink-3); margin-left: auto; font-family: ui-monospace, Consolas, monospace; }
+
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .btn-sm {
+    background: #fff; border: 1px solid var(--line); color: var(--ink-2);
+    padding: 6px 12px; border-radius: 8px; font-size: 12.5px;
+  }
+  .btn-sm:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  .timeline { margin-top: 10px; font-size: 11.5px; color: var(--ink-3); display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .composer {
+    border-top: 1px solid var(--line); background: var(--card); padding: 14px 28px 18px;
+    display: flex; gap: 12px; align-items: flex-end;
+  }
+  .composer textarea {
+    flex: 1; resize: none; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-size: 14px; font-family: inherit; line-height: 1.5;
+    max-height: 160px; outline: none; color: var(--ink);
+  }
+  .composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  #send {
+    background: var(--accent); color: #fff; padding: 12px 26px; font-weight: 600; flex: none;
+    min-width: 104px;
+  }
+  #send:hover:not(:disabled) { background: #245ae0; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-3); font-size: 13px; }
+  .typing i {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); display: block;
+    animation: bounce 1.2s infinite;
+  }
+  .typing i:nth-child(2) { animation-delay: .15s; }
+  .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .messages, .chat-header, .composer { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">KB</div>
+      <div>
+        <h1>企业知识库问答</h1>
+        <p id="health-line"><i class="dot" id="health-dot"></i>连接中…</p>
+      </div>
+    </div>
+
+    <section class="panel">
+      <h2>检索设置</h2>
+      <label class="field">检索方式
+        <select id="mode">
+          <option value="hybrid">混合检索（BM25 + 向量）</option>
+          <option value="bm25">仅关键词（BM25）</option>
+          <option value="vector">仅向量（语义）</option>
+        </select>
+      </label>
+      <label class="field">召回条数：<b id="topk-value">5</b>
+        <input type="range" id="topk" min="1" max="10" value="5">
+      </label>
+      <label class="switch"><input type="checkbox" id="rerank" checked> 启用重排</label>
+    </section>
+
+    <section class="panel">
+      <h2>运行统计</h2>
+      <div class="stats" id="stats"><div class="stat"><b>—</b><span>加载中</span></div></div>
+    </section>
+
+    <section class="panel">
+      <h2>流水线</h2>
+      <ul class="steps">
+        <li>查询改写</li>
+        <li>BM25 + 向量双路召回</li>
+        <li>RRF 融合 · 启发式重排</li>
+        <li>置信度门控（可拒答）</li>
+        <li>答案引用对齐原文片段</li>
+      </ul>
+    </section>
+  </aside>
+
+  <main class="chat">
+    <header class="chat-header">
+      <div>
+        <h2>向知识库提问</h2>
+        <p>答案只来自知识库文档并标注出处；没有依据时明确拒答，不编造。</p>
+      </div>
+      <div class="header-actions">
+        <a class="ghost" href="/docs">接口文档</a>
+        <button class="ghost" id="clear">清空对话</button>
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty" id="empty">
+        <div class="big">试试这些问题</div>
+        <div class="sub">点击任意问题直接提问，答案会标注引用来源</div>
+        <div class="chips" id="examples"></div>
+      </div>
+    </div>
+
+    <form class="composer" id="composer">
+      <textarea id="question" rows="1" placeholder="输入问题，Enter 发送，Shift + Enter 换行"></textarea>
+      <button type="submit" id="send">提问</button>
+    </form>
+  </main>
+</div>
+
+<script>
+const EXAMPLES = [
+  "KV Cache 为什么能加速推理",
+  "RRF 融合为什么不用原始分数",
+  "怎么衡量检索结果的排序质量",
+  "什么情况下不应该用 Agent",
+  "切分时的重叠窗口一般设多大",
+  "知识库文档里藏了恶意指令怎么办",
+];
+
+const el = (id) => document.getElementById(id);
+const messages = el("messages");
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function renderAnswerText(text) {
+  return escapeHtml(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/^[ \t]*[-*][ \t]+/gm, "• ")
+    // 小模型常把编号列表写成一整行（"…：1. 甲；2. 乙；3. 丙"），
+    // 在分号后断开，配合 .answer 的 pre-wrap 就能读成列表
+    .replace(/([；;])\s*(?=\d{1,2}[.、]\s)/g, "$1\n")
+    .replace(/\[(\d+)\]/g, (_, n) => `<span class="cite" data-cite="${n}">${n}</span>`);
+}
+
+function scrollToBottom() {
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function addUser(text) {
+  const node = document.createElement("div");
+  node.className = "msg user";
+  node.innerHTML = `<div class="bubble-user">${escapeHtml(text)}</div>`;
+  messages.appendChild(node);
+  scrollToBottom();
+}
+
+function addLoading() {
+  const node = document.createElement("div");
+  node.className = "msg";
+  node.id = "loading";
+  node.innerHTML = `<div class="card"><span class="typing"><i></i><i></i><i></i></span>
+    <span style="margin-left:8px;font-size:13px;color:var(--ink-3)">检索知识库…</span></div>`;
+  messages.appendChild(node);
+  scrollToBottom();
+}
+
+function removeLoading() {
+  const node = el("loading");
+  if (node) node.remove();
+}
+
+function addAnswer(data) {
+  const usedIds = new Set(data.used_citations || []);
+  const contexts = data.citations || [];
+  const refused = data.answer.includes("没有找到相关依据");
+  const usedFlags = contexts.map((c) => usedIds.has(c.chunk_id));
+  const maxScore = Math.max(...contexts.map((c) => Number(c.score || 0)), 0.0001);
+
+  const sources = contexts.map((context, i) => {
+    const score = Number(context.score || 0);
+    const width = Math.max(4, Math.round((score / maxScore) * 100));
+    const rank = i + 1;
+    return `
+      <div class="source ${usedFlags[i] ? "used" : ""}" data-rank="${rank}">
+        <div class="source-head">
+          <span class="rank">${rank}</span>
+          <span class="source-title" title="${escapeHtml(context.title || "")}">${escapeHtml(context.title || "")}</span>
+          <span class="score-badge">${score.toFixed(3)}</span>
+        </div>
+        <div class="bar"><i style="width:${width}%"></i></div>
+        <div class="snippet">${escapeHtml(context.snippet || "")}</div>
+        <div class="source-foot">
+          <span class="toggle"></span>
+          <span class="chunk-id">${escapeHtml(context.chunk_id || "")}</span>
+        </div>
+      </div>`;
+  }).join("");
+
+  const spans = (data.spans || [])
+    .filter((s) => s.name !== "confidence")
+    .map((s) => `<span>${s.name} ${Number(s.duration_ms).toFixed(2)}ms</span>`)
+    .join("");
+
+  const node = document.createElement("div");
+  node.className = "msg";
+  node.innerHTML = `
+    <div class="card ${refused ? "refused" : ""}">
+      <div class="answer">${renderAnswerText(data.answer)}</div>
+      <div class="meta">
+        <span class="pill">耗时 ${Number(data.latency_ms).toFixed(1)} ms</span>
+        ${refused ? '<span class="pill warn">依据不足，已拒答</span>' : ""}
+        ${data.degraded ? '<span class="pill warn">模型降级</span>' : ""}
+        ${data.cached ? '<span class="pill ok">命中缓存</span>' : ""}
+        ${Number(data.cost_usd) > 0 ? `<span class="pill">成本 $${Number(data.cost_usd).toFixed(5)}</span>` : ""}
+      </div>
+      <div class="actions">
+        <button class="btn-sm" data-copy>复制答案</button>
+        ${contexts.length ? '<button class="btn-sm" data-toggle-all>展开全部来源</button>' : ""}
+      </div>
+      <div class="timeline">${spans}</div>
+      <div class="sources">
+        <h4>参考来源（${contexts.length} 条，高亮为答案引用）</h4>
+        ${sources}
+      </div>
+    </div>`;
+  messages.appendChild(node);
+
+  node.querySelectorAll(".cite").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const target = node.querySelector(`.source[data-rank="${chip.dataset.cite}"]`);
+      if (target) {
+        target.classList.add("open");
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  });
+  node.querySelectorAll(".source").forEach((card) => {
+    card.addEventListener("click", () => card.classList.toggle("open"));
+  });
+
+  const copyBtn = node.querySelector("[data-copy]");
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(`${data.answer}\n\n${contexts.map((c, i) => `[${i + 1}] ${c.title}`).join("\n")}`);
+      copyBtn.textContent = "已复制";
+    } catch {
+      copyBtn.textContent = "复制失败";
+    }
+    setTimeout(() => { copyBtn.textContent = "复制答案"; }, 1500);
+  });
+
+  const toggleAll = node.querySelector("[data-toggle-all]");
+  toggleAll?.addEventListener("click", () => {
+    const cards = node.querySelectorAll(".source");
+    const expand = !(cards[0] && cards[0].classList.contains("open"));
+    cards.forEach((card) => card.classList.toggle("open", expand));
+    toggleAll.textContent = expand ? "收起全部来源" : "展开全部来源";
+  });
+  scrollToBottom();
+}
+
+function addError(message) {
+  const node = document.createElement("div");
+  node.className = "msg";
+  node.innerHTML = `<div class="card refused"><div class="answer">请求失败：${escapeHtml(message)}</div></div>`;
+  messages.appendChild(node);
+  scrollToBottom();
+}
+
+async function refreshHealth() {
+  try {
+    const res = await fetch("/health");
+    const data = await res.json();
+    el("health-line").innerHTML = `<i class="dot live"></i>${data.chunks} 个片段 · ${data.embedder}`;
+  } catch {
+    el("health-line").innerHTML = '<i class="dot down"></i>服务不可用';
+  }
+}
+
+async function refreshStats() {
+  try {
+    const res = await fetch("/stats");
+    const data = await res.json();
+    el("stats").innerHTML = `
+      <div class="stat"><b>${data.requests}</b><span>累计提问</span></div>
+      <div class="stat"><b>${data.refusals}</b><span>拒答</span></div>
+      <div class="stat"><b>${data.avg_latency_ms}</b><span>平均延迟 ms</span></div>
+      <div class="stat"><b>${Math.round((data.cache?.hit_rate || 0) * 100)}%</b><span>缓存命中</span></div>`;
+  } catch {
+    el("stats").innerHTML = '<div class="stat"><b>—</b><span>统计不可用</span></div>';
+  }
+}
+
+function resetExamples() {
+  const box = el("examples");
+  box.innerHTML = "";
+  EXAMPLES.forEach((question) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.textContent = question;
+    chip.addEventListener("click", () => {
+      el("question").value = question;
+      el("composer").requestSubmit();
+    });
+    box.appendChild(chip);
+  });
+}
+
+async function ask(question) {
+  el("empty")?.remove();
+  addUser(question);
+  addLoading();
+  el("send").disabled = true;
+  el("send").textContent = "检索中…";
+
+  const payload = {
+    question,
+    mode: el("mode").value,
+    top_k: Number(el("topk").value),
+    use_rerank: el("rerank").checked,
+  };
+
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    removeLoading();
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      addError(detail.detail || `HTTP ${res.status}`);
+    } else {
+      addAnswer(await res.json());
+    }
+  } catch (error) {
+    removeLoading();
+    addError(error.message);
+  } finally {
+    el("send").disabled = false;
+    el("send").textContent = "提问";
+    el("question").focus();
+    refreshStats();
+  }
+}
+
+el("composer").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const question = el("question").value.trim();
+  if (!question) return;
+  el("question").value = "";
+  el("question").style.height = "auto";
+  ask(question);
+});
+
+el("question").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    el("composer").requestSubmit();
+  }
+});
+
+el("question").addEventListener("input", (event) => {
+  event.target.style.height = "auto";
+  event.target.style.height = Math.min(event.target.scrollHeight, 160) + "px";
+});
+
+el("topk").addEventListener("input", (event) => {
+  el("topk-value").textContent = event.target.value;
+});
+
+el("clear").addEventListener("click", () => {
+  messages.innerHTML = "";
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  empty.id = "empty";
+  empty.innerHTML = '<div class="big">试试这些问题</div><div class="sub">点击任意问题直接提问，答案会标注引用来源</div><div class="chips" id="examples"></div>';
+  messages.appendChild(empty);
+  resetExamples();
+});
+
+resetExamples();
+refreshHealth();
+refreshStats();
+el("question").focus();
+</script>
+</body>
+</html>

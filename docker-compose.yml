@@ -1,0 +1,24 @@
+services:
+  kb-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      KB_LLM_PROVIDER: ${KB_LLM_PROVIDER:-stub}
+      KB_LLM_BASE_URL: ${KB_LLM_BASE_URL:-https://api.deepseek.com/v1}
+      KB_LLM_API_KEY: ${KB_LLM_API_KEY:-}
+      KB_LLM_MODEL: ${KB_LLM_MODEL:-deepseek-chat}
+      KB_EMBEDDING_PROVIDER: ${KB_EMBEDDING_PROVIDER:-hashing}
+      KB_EMBEDDING_DIM: ${KB_EMBEDDING_DIM:-4096}
+      KB_MIN_CONFIDENCE: ${KB_MIN_CONFIDENCE:-0.35}
+    volumes:
+      - ./data:/app/data:ro
+      - kb-index:/app/.kb_index
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  kb-index:

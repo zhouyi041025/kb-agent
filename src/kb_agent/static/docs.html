@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kb-agent · 接口文档</title>
+<style>
+  :root {
+    --accent: #2f6bff;
+    --accent-soft: #eaf0ff;
+    --ink: #101828;
+    --ink-2: #475467;
+    --ink-3: #8a94a6;
+    --line: #e4e8ef;
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --get: #0e7c66;
+    --get-soft: #e6f6f1;
+    --post: #b54708;
+    --post-soft: #fff4e8;
+    --code-bg: #0f172a;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace; }
+  .app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+  .sidebar {
+    background: var(--card); border-right: 1px solid var(--line);
+    padding: 20px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .back {
+    display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+    color: var(--ink-2); font-size: 12.5px; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; margin-bottom: 18px;
+  }
+  .back:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .brand { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+  .logo {
+    width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--accent);
+    color: #fff; display: grid; place-items: center; font-weight: 700;
+  }
+  .brand h1 { font-size: 15px; margin: 0; }
+  .brand p { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); }
+
+  .toc-group { margin-bottom: 16px; }
+  .toc-group > span {
+    display: block; font-size: 12px; font-weight: 650; color: var(--ink);
+    margin-bottom: 7px; padding-left: 8px; border-left: 3px solid var(--accent);
+  }
+  .toc-group a {
+    display: flex; gap: 8px; align-items: baseline; text-decoration: none;
+    color: var(--ink-2); font-size: 12.5px; padding: 4px 8px; border-radius: 7px;
+  }
+  .toc-group a:hover { background: var(--bg); color: var(--accent); }
+  .toc-group a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .toc-group .m { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--ink-3); flex: none; }
+  .toc-group a.active .m { color: var(--accent); }
+  .toc-group a.route { padding-left: 22px; }
+
+  main { padding: 34px 40px 80px; max-width: 980px; }
+  header.page { margin-bottom: 30px; }
+  header.page h1 { font-size: 24px; margin: 0 0 8px; }
+  .lead { color: var(--ink-2); white-space: pre-wrap; margin: 0 0 14px; font-size: 13.5px; }
+  .meta-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag-pill {
+    font-size: 12px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 999px; padding: 3px 11px; color: var(--ink-2);
+  }
+
+  .group { margin-bottom: 40px; }
+  .group > h2 { font-size: 17px; margin: 0 0 4px; }
+  .group > .group-desc { color: var(--ink-3); font-size: 13px; margin: 0 0 16px; }
+
+  .op {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 20px; margin-bottom: 16px; scroll-margin-top: 16px;
+  }
+  .op-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .method {
+    font-size: 11px; font-weight: 700; letter-spacing: .6px; border-radius: 6px;
+    padding: 3px 9px; flex: none;
+  }
+  .method.get { color: var(--get); background: var(--get-soft); }
+  .method.post { color: var(--post); background: var(--post-soft); }
+  .path { font-size: 14px; font-weight: 600; }
+  .op-title { font-size: 14px; color: var(--ink-2); margin-left: auto; }
+  .op-desc { color: var(--ink-2); font-size: 13px; white-space: pre-wrap; margin: 12px 0 0; }
+
+  .block-title {
+    font-size: 12.5px; font-weight: 650; color: var(--ink); margin: 18px 0 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .block-title .hint { font-weight: 400; color: var(--ink-3); font-size: 11.5px; }
+
+  table.schema { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.schema th {
+    text-align: left; color: var(--ink-3); font-weight: 600; font-size: 11.5px;
+    border-bottom: 1px solid var(--line); padding: 6px 10px 6px 0;
+  }
+  table.schema td { border-bottom: 1px solid var(--line); padding: 8px 10px 8px 0; vertical-align: top; }
+  table.schema tr:last-child td { border-bottom: none; }
+  table.schema td.name { font-family: ui-monospace, Consolas, monospace; color: var(--ink); white-space: nowrap; }
+  table.schema td.type { color: var(--ink-3); white-space: nowrap; }
+  .req { color: #d92d20; font-size: 11px; margin-left: 5px; }
+  .opt { color: var(--ink-3); font-size: 11px; margin-left: 5px; }
+
+  details.try { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+  details.try > summary {
+    cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--accent);
+    list-style: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  details.try > summary::-webkit-details-marker { display: none; }
+  details.try > summary::before { content: "\25B8"; font-size: 11px; }
+  details.try[open] > summary::before { content: "\25BE"; }
+  .try-body { margin-top: 12px; }
+  textarea.editor {
+    width: 100%; min-height: 96px; resize: vertical; border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 13px; font-size: 12.5px; line-height: 1.6;
+    font-family: ui-monospace, Consolas, monospace; color: var(--ink); outline: none;
+    background: #fcfdff;
+  }
+  textarea.editor:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .try-actions { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+  button.send {
+    background: var(--accent); color: #fff; border: none; border-radius: 9px;
+    padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  button.send:hover:not(:disabled) { background: #245ae0; }
+  button.send:disabled { opacity: .55; cursor: not-allowed; }
+  button.ghost {
+    background: #fff; border: 1px solid var(--line); color: var(--ink-2);
+    border-radius: 9px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  button.ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .curl {
+    display: flex; align-items: flex-start; gap: 8px; background: var(--bg);
+    border-radius: 9px; padding: 9px 11px; margin-top: 9px;
+  }
+  .curl code { font-size: 12px; color: var(--ink-2); white-space: pre-wrap; word-break: break-all; flex: 1; }
+  .curl button {
+    background: #fff; border: 1px solid var(--line); border-radius: 7px;
+    font-size: 11.5px; padding: 3px 9px; cursor: pointer; flex: none; color: var(--ink-2);
+  }
+  .curl button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .result { margin-top: 12px; }
+  .result-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .status { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 2px 9px; }
+  .status.ok { color: var(--get); background: var(--get-soft); }
+  .status.bad { color: #d92d20; background: #fef3f2; }
+  .timing { font-size: 12px; color: var(--ink-3); }
+  pre.output {
+    background: var(--code-bg); color: #e2e8f0; border-radius: 10px; padding: 13px 15px;
+    font-size: 12px; line-height: 1.65; overflow: auto; max-height: 420px; margin: 0;
+  }
+  .empty-note { color: var(--ink-3); font-size: 13px; }
+
+  @media (max-width: 880px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; }
+    main { padding: 22px 18px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="back" href="/">← 返回问答控制台</a>
+    <div class="brand">
+      <div class="logo">KB</div>
+      <div>
+        <h1>kb-agent</h1>
+        <p id="version-line">接口文档</p>
+      </div>
+    </div>
+    <nav id="toc"><div class="empty-note">加载中…</div></nav>
+  </aside>
+  <main>
+    <header class="page">
+      <h1 id="page-title">kb-agent 接口文档</h1>
+      <p class="lead" id="page-desc"></p>
+      <div class="meta-row" id="page-meta"></div>
+    </header>
+    <div id="content"><div class="empty-note">正在读取 /openapi.json …</div></div>
+  </main>
+</div>
+
+<script>
+const el = (id) => document.getElementById(id);
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function typeOf(schema, spec) {
+  if (!schema) return "any";
+  if (schema.$ref) return String(schema.$ref).split("/").pop();
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.map((item) => typeOf(item, spec)).join(" | ");
+  }
+  let name = schema.type || "any";
+  if (schema.type === "array") name = `${typeOf(schema.items, spec)}[]`;
+  if (schema.format) name += ` <${schema.format}>`;
+  if (schema.enum) name += ` (${schema.enum.join(" / ")})`;
+  return name;
+}
+
+function resolve(schema, spec) {
+  if (schema && schema.$ref) {
+    const path = String(schema.$ref).replace(/^#\//, "").split("/");
+    return path.reduce((acc, key) => (acc ? acc[key] : undefined), spec) || {};
+  }
+  return schema || {};
+}
+
+function exampleFor(schema, spec) {
+  const node = resolve(schema, spec);
+  if (node.example !== undefined) return node.example;
+  if (node.default !== undefined) return node.default;
+  if (Array.isArray(node.anyOf) && node.anyOf.length) return exampleFor(node.anyOf[0], spec);
+  if (node.enum && node.enum.length) return node.enum[0];
+  if (node.type === "object" || node.properties) {
+    const out = {};
+    Object.entries(node.properties || {}).forEach(([key, value]) => {
+      out[key] = exampleFor(value, spec);
+    });
+    return out;
+  }
+  if (node.type === "array") return [exampleFor(node.items, spec)];
+  if (node.type === "integer" || node.type === "number") return 0;
+  if (node.type === "boolean") return true;
+  return "";
+}
+
+function schemaTable(schema, spec, required) {
+  const node = resolve(schema, spec);
+  const props = node.properties || {};
+  const needed = new Set(required || node.required || []);
+  const rows = Object.entries(props).map(([name, value]) => {
+    const mark = needed.has(name) ? '<span class="req">必填</span>' : '<span class="opt">选填</span>';
+    return `<tr>
+      <td class="name">${escapeHtml(name)}${mark}</td>
+      <td class="type">${escapeHtml(typeOf(value, spec))}</td>
+      <td>${escapeHtml(value.description || "")}</td>
+    </tr>`;
+  });
+  if (!rows.length) return '<p class="empty-note">无字段。</p>';
+  return `<table class="schema">
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>`;
+}
+
+function curlFor(method, path, body) {
+  const lines = [`curl -X ${method} ${location.origin}${path}`];
+  if (body) {
+    lines.push(`  -H "Content-Type: application/json"`);
+    lines.push(`  -d '${JSON.stringify(body)}'`);
+  }
+  return lines.join(" \\\n");
+}
+
+function declaredExample(bodyContent, bodySchema, spec) {
+  const resolved = resolve(bodySchema, spec);
+  const fromContent = bodyContent?.examples ? Object.values(bodyContent.examples)[0]?.value : undefined;
+  const fromSchema = Array.isArray(resolved.examples) ? resolved.examples[0] : resolved.examples;
+  return [bodyContent?.example, fromContent, resolved.example, fromSchema]
+    .find((value) => value !== undefined && value !== null);
+}
+
+function renderOperation(method, path, op, spec) {
+  const bodyContent = op.requestBody?.content?.["application/json"];
+  const bodySchema = bodyContent?.schema;
+  const declared = declaredExample(bodyContent, bodySchema, spec);
+  const example = declared !== undefined ? declared : (bodySchema ? exampleFor(bodySchema, spec) : null);
+  const exampleText = example === null ? "" : JSON.stringify(example, null, 2);
+
+  const responses = Object.entries(op.responses || {}).map(([code, response]) => {
+    const text = response.description || "";
+    return `<tr><td class="name">${escapeHtml(code)}</td><td>${escapeHtml(text)}</td></tr>`;
+  }).join("");
+
+  return `
+  <section class="op" id="op-${method}-${path.replace(/[^a-z0-9]+/gi, "-")}">
+    <div class="op-head">
+      <span class="method ${method.toLowerCase()}">${method}</span>
+      <span class="path mono">${escapeHtml(path)}</span>
+      <span class="op-title">${escapeHtml(op.summary || "")}</span>
+    </div>
+    <p class="op-desc">${escapeHtml(op.description || "")}</p>
+
+    ${bodySchema ? `<div class="block-title">请求体 <span class="hint">application/json</span></div>${schemaTable(bodySchema, spec)}` : ""}
+
+    <div class="block-title">响应</div>
+    <table class="schema">
+      <thead><tr><th>状态码</th><th>说明</th></tr></thead>
+      <tbody>${responses}</tbody>
+    </table>
+
+    <details class="try">
+      <summary>试一下</summary>
+      <div class="try-body">
+        ${bodySchema ? `<textarea class="editor" spellcheck="false">${escapeHtml(exampleText)}</textarea>` : ""}
+        <div class="try-actions">
+          <button class="send" type="button">发送请求</button>
+        </div>
+        <div class="curl"><code>${escapeHtml(curlFor(method, path, example))}</code><button type="button" class="copy-curl">复制</button></div>
+        <div class="result"></div>
+      </div>
+    </details>
+  </section>`;
+}
+
+async function main() {
+  let spec;
+  try {
+    spec = await (await fetch("/openapi.json")).json();
+  } catch (error) {
+    el("content").innerHTML = `<p class="empty-note">读取接口定义失败：${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  document.title = `${spec.info.title} · 接口文档`;
+  el("page-title").textContent = `${spec.info.title} 接口文档`;
+  el("version-line").textContent = `版本 ${spec.info.version}`;
+  el("page-desc").textContent = (spec.info.description || "").trim();
+
+  const grouped = new Map();
+  const order = (spec.tags || []).map((tag) => tag.name);
+  Object.entries(spec.paths || {}).forEach(([path, methods]) => {
+    Object.entries(methods).forEach(([method, op]) => {
+      const tags = op.tags && op.tags.length ? op.tags : ["其他"];
+      tags.forEach((tag) => {
+        if (!grouped.has(tag)) grouped.set(tag, []);
+        grouped.get(tag).push({ method: method.toUpperCase(), path, op });
+      });
+    });
+  });
+
+  const tagInfo = Object.fromEntries((spec.tags || []).map((tag) => [tag.name, tag.description || ""]));
+  const names = [...grouped.keys()].sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  el("page-meta").innerHTML = [
+    `<span class="tag-pill">共 ${names.reduce((n, name) => n + grouped.get(name).length, 0)} 个接口</span>`,
+    ...names.map((name) => `<span class="tag-pill">${escapeHtml(name)}</span>`),
+    `<span class="tag-pill">OpenAPI ${escapeHtml(spec.openapi)}</span>`,
+  ].join("");
+
+  el("content").innerHTML = names.map((name) => {
+    const ops = grouped.get(name);
+    return `<section class="group">
+      <h2>${escapeHtml(name)}</h2>
+      <p class="group-desc">${escapeHtml(tagInfo[name] || "")}</p>
+      ${ops.map(({ method, path, op }) => renderOperation(method, path, op, spec)).join("")}
+    </section>`;
+  }).join("");
+
+  el("toc").innerHTML = names.map((name) => `
+    <div class="toc-group">
+      <span>${escapeHtml(name)}</span>
+      ${grouped.get(name).map(({ method, path, op }) => `
+        <a class="route" href="#op-${method}-${path.replace(/[^a-z0-9]+/gi, "-")}">
+          <span class="m">${method}</span><span>${escapeHtml(op.summary || path)}</span>
+        </a>`).join("")}
+    </div>`).join("");
+
+  document.querySelectorAll(".op").forEach((section) => {
+    const editor = section.querySelector(".editor");
+    const send = section.querySelector(".send");
+    const result = section.querySelector(".result");
+    const method = section.querySelector(".method").textContent;
+    const path = section.querySelector(".path").textContent;
+
+    send.addEventListener("click", async () => {
+      let payload;
+      if (editor) {
+        try {
+          payload = JSON.parse(editor.value);
+        } catch (error) {
+          result.innerHTML = `<div class="result-bar"><span class="status bad">JSON 格式错误</span></div><pre class="output">${escapeHtml(error.message)}</pre>`;
+          return;
+        }
+      }
+      send.disabled = true;
+      send.textContent = "请求中…";
+      const started = performance.now();
+      try {
+        const response = await fetch(path, {
+          method,
+          headers: payload ? { "Content-Type": "application/json" } : undefined,
+          body: payload ? JSON.stringify(payload) : undefined,
+        });
+        const elapsed = performance.now() - started;
+        const text = await response.text();
+        let pretty = text;
+        try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch { /* 非 JSON 原样展示 */ }
+        result.innerHTML = `
+          <div class="result-bar">
+            <span class="status ${response.ok ? "ok" : "bad"}">${response.status} ${escapeHtml(response.statusText || "")}</span>
+            <span class="timing">耗时 ${elapsed.toFixed(1)} ms</span>
+          </div>
+          <pre class="output">${escapeHtml(pretty)}</pre>`;
+      } catch (error) {
+        result.innerHTML = `<div class="result-bar"><span class="status bad">请求失败</span></div><pre class="output">${escapeHtml(error.message)}</pre>`;
+      } finally {
+        send.disabled = false;
+        send.textContent = "发送请求";
+      }
+    });
+
+    section.querySelector(".copy-curl")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(section.querySelector(".curl code").textContent);
+        button.textContent = "已复制";
+      } catch {
+        button.textContent = "复制失败";
+      }
+      setTimeout(() => { button.textContent = "复制"; }, 1500);
+    });
+  });
+
+  const links = [...document.querySelectorAll(".toc-group a")];
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      links.forEach((link) => link.classList.toggle("active", link.getAttribute("href") === `#${entry.target.id}`));
+    });
+  }, { rootMargin: "-10% 0px -70% 0px" });
+  document.querySelectorAll(".op").forEach((section) => observer.observe(section));
+}
+
+main();
+</script>
+</body>
+</html>
