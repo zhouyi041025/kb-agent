@@ -7,6 +7,7 @@ name = "kb-agent"
 version = "0.1.0"
 description = "企业知识库问答服务：混合检索 + Agent 编排 + 可复现评测"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",

@@ -328,3 +328,7 @@ python -m pytest -q      # 55 个测试，覆盖切分、BM25、RRF、重排、�
 ```
 
 CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）会在每次提交时跑单测、离线复现评测、构建镜像并做容器冒烟测试。
+
+## 许可证
+
+[MIT](LICENSE)：可以自由使用、修改、分发，保留版权声明即可。
