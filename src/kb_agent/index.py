@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -40,7 +40,7 @@ class BM25Index:
         self.idf: dict[str, float] = {}
         self.inverted: dict[str, list[tuple[int, int]]] = {}
 
-    def fit(self, chunk_ids: Sequence[str], texts: Sequence[str]) -> "BM25Index":
+    def fit(self, chunk_ids: Sequence[str], texts: Sequence[str]) -> BM25Index:
         if len(chunk_ids) != len(texts):
             raise ValueError("chunk_ids 与 texts 长度不一致")
         self.chunk_ids = list(chunk_ids)
@@ -88,7 +88,7 @@ class VectorIndex:
         self.chunk_ids: list[str] = []
         self.matrix: np.ndarray = np.zeros((0, 0), dtype=np.float32)
 
-    def fit(self, chunk_ids: Sequence[str], vectors: np.ndarray) -> "VectorIndex":
+    def fit(self, chunk_ids: Sequence[str], vectors: np.ndarray) -> VectorIndex:
         if vectors.ndim != 2:
             raise ValueError("vectors 必须是二维数组")
         if len(chunk_ids) != vectors.shape[0]:
@@ -139,7 +139,7 @@ class KnowledgeIndex:
         self.vectors = VectorIndex()
 
     @classmethod
-    def build(cls, chunks: Sequence[Chunk], embedder: Embedder, batch_size: int = 64) -> "KnowledgeIndex":
+    def build(cls, chunks: Sequence[Chunk], embedder: Embedder, batch_size: int = 64) -> KnowledgeIndex:
         index = cls(chunks, embedder)
         chunk_ids = [chunk.chunk_id for chunk in index.chunks]
         index.bm25.fit(chunk_ids, [chunk.text for chunk in index.chunks])
@@ -179,7 +179,7 @@ class KnowledgeIndex:
         return directory
 
     @classmethod
-    def load(cls, directory: str | Path, embedder: Embedder) -> "KnowledgeIndex":
+    def load(cls, directory: str | Path, embedder: Embedder) -> KnowledgeIndex:
         directory = Path(directory)
         meta_path = directory / "meta.json"
         if not meta_path.exists():

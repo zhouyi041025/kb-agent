@@ -24,7 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from kb_agent.config import AppConfig  # noqa: E402
-from kb_agent.embedder import CachedEmbedder, HashingEmbedder, build_embedder  # noqa: E402
+from kb_agent.embedder import (  # noqa: E402
+    CachedEmbedder,
+    HashingEmbedder,
+    build_embedder,
+)
 from kb_agent.index import KnowledgeIndex  # noqa: E402
 from kb_agent.ingest import build_chunks, load_documents  # noqa: E402
 from kb_agent.llm import StubLLM  # noqa: E402

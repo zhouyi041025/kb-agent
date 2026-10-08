@@ -1,7 +1,7 @@
 import pytest
 
 from kb_agent.embedder import HashingEmbedder
-from kb_agent.index import BM25Index, KnowledgeIndex, reciprocal_rank_fusion, SearchHit
+from kb_agent.index import BM25Index, KnowledgeIndex, SearchHit, reciprocal_rank_fusion
 from kb_agent.schemas import Chunk
 
 
