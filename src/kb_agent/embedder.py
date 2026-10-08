@@ -16,6 +16,8 @@ import numpy as np
 from .config import EmbeddingConfig
 from .text import tokenize
 
+DEFAULT_HASHING_DIM = 4096
+
 
 class Embedder(Protocol):
     dim: int
@@ -27,11 +29,12 @@ class Embedder(Protocol):
 class HashingEmbedder:
     """signed hashing trick + L2 归一化，行为完全确定。"""
 
-    def __init__(self, dim: int = 512) -> None:
-        if dim <= 0:
+    def __init__(self, dim: int | None = None) -> None:
+        resolved = DEFAULT_HASHING_DIM if dim is None else int(dim)
+        if resolved <= 0:
             raise ValueError("dim 必须为正整数")
-        self.dim = dim
-        self.name = f"hashing-{dim}"
+        self.dim = resolved
+        self.name = f"hashing-{resolved}"
 
     def _token_index(self, token: str) -> tuple[int, float]:
         digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
@@ -53,13 +56,14 @@ class HashingEmbedder:
 class OpenAICompatEmbedder:
     """任何 OpenAI 兼容的 /embeddings 端点（OpenAI、Qwen、GLM、BGE 自建服务等）。"""
 
-    def __init__(self, model: str, base_url: str, api_key: str, dim: int = 1024, timeout: float = 30.0) -> None:
+    def __init__(self, model: str, base_url: str, api_key: str, dim: int | None = None, timeout: float = 30.0) -> None:
         if not model:
             raise ValueError("使用 openai embedding 时必须设置 KB_EMBEDDING_MODEL")
         import httpx
 
         self.model = model
         self.name = f"openai-{model}"
+        # auto（None）时维度在首次 encode 后才知道（如 embedding-3 是 2048 维）
         self.dim = dim
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),

@@ -49,6 +49,22 @@ def _env_bool(key: str, default: bool) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _env_optional_int(key: str, default: int | None) -> int | None:
+    """读一个可选整数：空值 / auto / none 都视为"不指定"。"""
+    raw = os.getenv(key)
+    if raw is None or raw.strip().lower() in {"", "auto", "none", "null"}:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+# 拒答阈值的唯一来源：dataclass 默认值与 from_env 的 fallback 必须一致，
+# 否则"文档写 0.45、服务实际跑 0.35"这类偏差会静默进入线上（回归测试见 test_config.py）。
+DEFAULT_MIN_CONFIDENCE = 0.45
+
+
 @dataclass
 class LLMConfig:
     provider: str = "stub"
@@ -68,7 +84,10 @@ class EmbeddingConfig:
     provider: str = "hashing"
     # 维度决定签名哈希的碰撞率：512 维时碰撞明显，稠密分支质量被拖累，
     # 4096 维下纯向量分支才达到可用水平（见 eval/report.md 的维度消融）。
-    dim: int = 4096
+    # auto（None）时：哈希向量用默认 4096，远端向量模型以实际返回维度为准，
+    # 加载索引时也会按向量文件自适应 —— 避免"按文档切了真实向量模型，
+    # 却因为默认维度对不上而在每次启动时静默重建索引"。
+    dim: int | None = None
     model: str = ""
 
 
@@ -80,7 +99,7 @@ class RetrievalConfig:
     use_rerank: bool = True
     # 检索置信度门控：最高分片段的 idf 加权词覆盖率低于该值时直接拒答，
     # 宁可说"不知道"也不让模型在没有依据的情况下编答案。
-    min_confidence: float = 0.45
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE
     # 置信度取前几个片段的词项并集：答案常常需要跨片段拼装，
     # 只看单个片段会把这类问题误判成"没有依据"（见 eval/report.md 的门控消融）。
     confidence_context_window: int = 3
@@ -109,7 +128,7 @@ class AppConfig:
             ),
             embedding=EmbeddingConfig(
                 provider=_env_str("KB_EMBEDDING_PROVIDER", "hashing"),
-                dim=_env_int("KB_EMBEDDING_DIM", 4096),
+                dim=_env_optional_int("KB_EMBEDDING_DIM", None),
                 model=_env_str("KB_EMBEDDING_MODEL", ""),
             ),
             retrieval=RetrievalConfig(
@@ -117,7 +136,7 @@ class AppConfig:
                 top_k=_env_int("KB_TOP_K", 5),
                 candidate_k=_env_int("KB_CANDIDATE_K", 20),
                 use_rerank=_env_bool("KB_USE_RERANK", True),
-                min_confidence=float(_env_str("KB_MIN_CONFIDENCE", "0.35")),
+                min_confidence=float(_env_str("KB_MIN_CONFIDENCE", str(DEFAULT_MIN_CONFIDENCE))),
             ),
             index_dir=_env_str("KB_INDEX_DIR", ".kb_index"),
             knowledge_dir=_env_str("KB_KNOWLEDGE_DIR", "data/knowledge"),
