@@ -87,7 +87,46 @@ def test_cache_hit_on_repeated_question():
     service.answer(QUESTION)
     second = service.answer(QUESTION)
     assert second.cached is True
+    assert second.cache_kind == "exact"
     assert service.cache.hits == 1
+
+
+def test_semantic_cache_hits_on_punctuation_variant():
+    """精确缓存只认一模一样的字符串；换个标点再问一遍应由语义缓存接住。"""
+    config = AppConfig()
+    config.retrieval.min_confidence = 0.0
+    config.semantic_cache = True
+    service = KbService(config, index=make_index(), llm=StubLLM())
+
+    first = service.answer(QUESTION)
+    assert first.cached is False
+    assert first.cache_kind == ""
+
+    second = service.answer(QUESTION + "？")
+    assert second.cached is True
+    assert second.cache_kind == "semantic"
+    assert second.answer == first.answer
+    assert service.semantic_cache is not None and service.semantic_cache.hits == 1
+
+
+def test_semantic_cache_off_by_default():
+    service = make_service()
+    assert service.semantic_cache is None
+
+    service.answer(QUESTION)
+    assert service.answer(QUESTION + "？").cached is False
+
+
+def test_stats_include_semantic_cache_when_enabled():
+    config = AppConfig()
+    config.retrieval.min_confidence = 0.0
+    config.semantic_cache = True
+    service = KbService(config, index=make_index(), llm=StubLLM())
+    service.answer(QUESTION)
+
+    payload = service.stats_payload()
+    assert payload["semantic_cache"]["size"] == 1
+    assert payload["semantic_cache"]["threshold"] == config.semantic_cache_threshold
 
 
 def test_trace_records_each_stage():

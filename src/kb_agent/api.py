@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -121,6 +122,27 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
     )
     app.state.service = service or KbService(config or AppConfig.from_env())
 
+    # 并发上限：同步接口在线程池里执行，没有闸门时一次压测会把上游模型打成 429，
+    # 随后每个请求都排队重试，整体延迟雪崩。这里用信号量把并发压在配置值以内。
+    limiter = threading.BoundedSemaphore(max(1, app.state.service.config.max_concurrency))
+    queue_timeout = app.state.service.config.queue_timeout_seconds
+
+    def require_auth(authorization: str | None = Header(default=None)) -> None:
+        """配置了 KB_API_KEY 才启用 Bearer 鉴权；留空时保持零配置可用（本地/CI）。
+
+        /ask、/ingest、/stats 受保护；/health 与 /metrics 保持开放，
+        否则负载均衡探活和 Prometheus 抓取都会被 401 挡住。
+        """
+        expected = app.state.service.config.api_key
+        if not expected:
+            return
+        if authorization != f"Bearer {expected}":
+            raise HTTPException(
+                status_code=401,
+                detail="缺少或错误的 Bearer Token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
@@ -163,7 +185,7 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
             422: {"description": "参数校验失败。"},
         },
     )
-    def ingest(request: IngestRequest) -> dict:
+    def ingest(request: IngestRequest, _auth: None = Depends(require_auth)) -> dict:
         """加载知识库目录、切分文档、重建 BM25 与向量索引并写入磁盘。
 
         目录不存在时返回 404。重建期间旧索引仍可服务，重建完成后原子替换。
@@ -184,7 +206,7 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
             503: {"description": "索引未加载，服务尚未就绪。"},
         },
     )
-    def ask(request: AskRequest) -> dict:
+    def ask(request: AskRequest, _auth: None = Depends(require_auth)) -> dict:
         """返回答案与引用来源。
 
         - 答案只来自知识库，依据不足时返回固定拒答文案，不会编造。
@@ -195,14 +217,19 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
         svc: KbService = app.state.service
         if svc.index is None:
             raise HTTPException(status_code=503, detail="索引未加载")
-        answer = svc.answer(
-            request.question,
-            request.history,
-            mode=request.mode,
-            top_k=request.top_k,
-            use_rerank=request.use_rerank,
-            use_cache=request.use_cache,
-        )
+        if not limiter.acquire(timeout=queue_timeout):
+            raise HTTPException(status_code=503, detail="服务繁忙，请稍后重试")
+        try:
+            answer = svc.answer(
+                request.question,
+                request.history,
+                mode=request.mode,
+                top_k=request.top_k,
+                use_rerank=request.use_rerank,
+                use_cache=request.use_cache,
+            )
+        finally:
+            limiter.release()
         return {
             "question": answer.question,
             "answer": answer.answer,
@@ -219,6 +246,7 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
             "used_citations": answer.citations,
             "degraded": answer.degraded,
             "cached": answer.cached,
+            "cache_kind": answer.cache_kind,
             "latency_ms": answer.latency_ms,
             "cost_usd": answer.cost_usd,
             "spans": [{"name": span.name, "duration_ms": span.duration_ms, **span.meta} for span in answer.spans],
@@ -230,7 +258,7 @@ def create_app(config: AppConfig | None = None, service: KbService | None = None
         summary="运行统计",
         responses={200: {"description": "累计请求、降级、拒答、token、成本、延迟与缓存命中率。"}},
     )
-    def stats() -> dict:
+    def stats(_auth: None = Depends(require_auth)) -> dict:
         """累计请求数、降级次数、拒答次数、token、估算成本、平均延迟与缓存命中率。"""
         svc: KbService = app.state.service
         return svc.stats_payload()

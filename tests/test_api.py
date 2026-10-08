@@ -60,6 +60,42 @@ def test_stats_endpoint():
         assert client.get("/stats").json()["requests"] == 1
 
 
+def test_ask_requires_bearer_when_api_key_configured():
+    service = make_service()
+    service.config.api_key = "secret-token"
+    with TestClient(create_app(service=service)) as client:
+        assert client.post("/ask", json={"question": "混合检索是怎么融合的"}).status_code == 401
+
+        ok = client.post(
+            "/ask",
+            json={"question": "混合检索是怎么融合的"},
+            headers={"Authorization": "Bearer secret-token"},
+        )
+        assert ok.status_code == 200
+
+        # 探活与指标抓取不能被鉴权挡住
+        assert client.get("/health").status_code == 200
+        assert client.get("/metrics").status_code == 200
+        assert client.get("/stats").status_code == 401
+
+
+def test_ingest_requires_bearer_when_api_key_configured():
+    service = make_service()
+    service.config.api_key = "secret-token"
+    with TestClient(create_app(service=service)) as client:
+        assert client.post("/ingest", json={"rebuild": True}).status_code == 401
+
+
+def test_ask_payload_exposes_cache_kind():
+    with TestClient(create_app(service=make_service())) as client:
+        first = client.post("/ask", json={"question": "混合检索是怎么融合的"}).json()
+        second = client.post("/ask", json={"question": "混合检索是怎么融合的"}).json()
+
+        assert first["cache_kind"] == ""
+        assert second["cached"] is True
+        assert second["cache_kind"] == "exact"
+
+
 def test_index_serves_web_console():
     with TestClient(create_app(service=make_service())) as client:
         response = client.get("/")
