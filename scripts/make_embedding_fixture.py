@@ -36,14 +36,18 @@ def main() -> int:
     parser.add_argument("--knowledge-dir", default=str(ROOT / "data" / "knowledge"))
     parser.add_argument("--dataset", default=str(ROOT / "eval" / "dataset.jsonl"))
     parser.add_argument("--strategy", default="recursive")
+    parser.add_argument("--model-name", default="", help="fixture 中记录的模型名（默认用 embedder 的 name；本地路径建议显式给一个干净名字）")
     parser.add_argument("--out", default=str(ROOT / "eval" / "fixtures" / "embedding-fixture.npz"))
     args = parser.parse_args()
 
     config = AppConfig.from_env()
-    if config.embedding.provider != "openai" or not config.embedding.model:
+    if config.embedding.provider not in {"openai", "local"}:
         raise SystemExit(
-            "请在环境变量里指定 KB_EMBEDDING_PROVIDER=openai 与 KB_EMBEDDING_MODEL（例如 embedding-3）"
+            "请用 KB_EMBEDDING_PROVIDER=openai（远端语义向量，需要 Key）"
+            "或 KB_EMBEDDING_PROVIDER=local（本地 sentence-transformers，无需 Key）"
         )
+    if config.embedding.provider == "openai" and not config.embedding.model:
+        raise SystemExit("openai 模式需要同时设置 KB_EMBEDDING_MODEL（例如 embedding-3）")
 
     documents = load_documents(Path(args.knowledge_dir))
     chunks = build_chunks(documents, strategy=args.strategy)
@@ -59,7 +63,8 @@ def main() -> int:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(out, texts=np.array(texts), vectors=vectors.astype(np.float32), model=np.array(embedder.name))
+    name = args.model_name or embedder.name
+    np.savez(out, texts=np.array(texts), vectors=vectors.astype(np.float32), model=np.array(name))
     print(f"fixture 已写入 {out}：{len(texts)} 条文本（{len(chunks)} 片段 + {len(questions)} 问题）")
     return 0
 

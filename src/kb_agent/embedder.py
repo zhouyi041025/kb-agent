@@ -19,6 +19,7 @@ from .config import EmbeddingConfig
 from .text import tokenize
 
 DEFAULT_HASHING_DIM = 4096
+DEFAULT_LOCAL_MODEL = "BAAI/bge-small-zh-v1.5"
 
 
 class Embedder(Protocol):
@@ -92,6 +93,8 @@ def build_embedder(config: EmbeddingConfig, *, base_url: str = "", api_key: str 
             api_key=api_key,
             dim=config.dim,
         )
+    if config.provider == "local":
+        return SentenceTransformerEmbedder(model=config.model or DEFAULT_LOCAL_MODEL)
     return HashingEmbedder(dim=config.dim)
 
 
@@ -120,3 +123,30 @@ class CachedEmbedder:
                 f"请用 scripts/make_embedding_fixture.py 重新生成（首个缺失：{missing[0][:40]}...）"
             )
         return np.stack([self._vectors[text] for text in texts]).astype(np.float32)
+
+
+class SentenceTransformerEmbedder:
+    """本地句向量模型（可选依赖：`pip install "kb-agent[local]"`）。
+
+    用于"真实语义向量"的离线实验：不需要 API Key，同一模型版本下结果确定，
+    配合 scripts/make_embedding_fixture.py 可以把语义向量评测固化成 fixture，
+    让"换掉稠密分支之后结论会不会变"这个问题能被任何人复现。
+    """
+
+    def __init__(self, model: str = DEFAULT_LOCAL_MODEL, device: str = "cpu") -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:  # pragma: no cover - 取决于可选依赖
+            raise RuntimeError(
+                '使用本地向量模型需要安装可选依赖：pip install "kb-agent[local]"'
+                "（或直接 pip install sentence-transformers）"
+            ) from exc
+        self._model = SentenceTransformer(model, device=device)
+        # sentence-transformers 6.x 把方法改名为 get_embedding_dimension，保留旧名兜底
+        get_dim = getattr(self._model, "get_embedding_dimension", None) or self._model.get_sentence_embedding_dimension
+        self.dim = int(get_dim())
+        self.name = f"local-{model}"
+
+    def encode(self, texts: Sequence[str]) -> np.ndarray:
+        matrix = self._model.encode(list(texts), normalize_embeddings=True, show_progress_bar=False)
+        return np.asarray(matrix, dtype=np.float32)

@@ -9,6 +9,7 @@
     python eval/run_eval.py --sweep --sensitivity --strategies        # 全量消融
     python eval/run_eval.py --split test                              # 只跑 test 划分
     python eval/run_eval.py --embedding-cache eval/fixtures/embedding-3.npz  # 离线复现语义向量评测
+    python eval/run_eval.py --embedding-provider local --rerankers noop,heuristic,cross-encoder
 """
 
 from __future__ import annotations
@@ -23,8 +24,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from kb_agent.config import AppConfig  # noqa: E402
+from kb_agent.config import AppConfig, EmbeddingConfig  # noqa: E402
 from kb_agent.embedder import (  # noqa: E402
+    DEFAULT_LOCAL_MODEL,
     CachedEmbedder,
     HashingEmbedder,
     build_embedder,
@@ -32,6 +34,7 @@ from kb_agent.embedder import (  # noqa: E402
 from kb_agent.index import KnowledgeIndex  # noqa: E402
 from kb_agent.ingest import build_chunks, load_documents  # noqa: E402
 from kb_agent.llm import StubLLM  # noqa: E402
+from kb_agent.rerank import CrossEncoderReranker, HeuristicReranker, NoopReranker  # noqa: E402
 from kb_agent.service import REFUSAL_TEXT, KbService  # noqa: E402
 
 CONFIGS = [
@@ -62,13 +65,37 @@ def build_index(
     return index
 
 
-def make_service(index: KnowledgeIndex, mode: str, use_rerank: bool, top_k: int, min_confidence: float) -> KbService:
+def make_service(
+    index: KnowledgeIndex,
+    mode: str,
+    use_rerank: bool,
+    top_k: int,
+    min_confidence: float,
+    reranker=None,
+) -> KbService:
     config = AppConfig()
     config.retrieval.mode = mode
     config.retrieval.top_k = top_k
     config.retrieval.use_rerank = use_rerank
     config.retrieval.min_confidence = min_confidence
-    return KbService(config, index=index, llm=StubLLM())
+    return KbService(config, index=index, llm=StubLLM(), reranker=reranker)
+
+
+def build_reranker(name: str, model: str):
+    """按名字构造重排器；默认启发式，可切换到 noop（对照）与 cross-encoder。"""
+    if name == "noop":
+        return NoopReranker()
+    if name == "cross-encoder":
+        return CrossEncoderReranker(model)
+    return HeuristicReranker()
+
+
+def _percentile(values: list[float], ratio: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = min(len(ordered) - 1, int(round(ratio * (len(ordered) - 1))))
+    return round(ordered[position], 2)
 
 
 def evaluate(
@@ -78,8 +105,10 @@ def evaluate(
     use_rerank: bool,
     top_k: int,
     min_confidence: float,
+    reranker=None,
+    reranker_name: str = "heuristic",
 ) -> dict:
-    service = make_service(index, mode, use_rerank, top_k, min_confidence)
+    service = make_service(index, mode, use_rerank, top_k, min_confidence, reranker=reranker)
     rows: list[dict] = []
     for item in dataset:
         answer = service.answer(item["question"], mode=mode, top_k=top_k, use_rerank=use_rerank, use_cache=False)
@@ -101,20 +130,30 @@ def evaluate(
                 "recall@k": (len(set(retrieved) & gold) / len(gold)) if gold else None,
                 "reciprocal_rank": (1 / first_relevant) if first_relevant else 0.0,
                 "citation_precision": (len(cited_docs & gold) / len(cited_docs)) if cited_docs else None,
+                "latency_ms": answer.latency_ms,
             }
         )
-    return summarize(rows, mode, use_rerank, top_k, min_confidence)
+    return summarize(rows, mode, use_rerank, top_k, min_confidence, reranker_name)
 
 
-def summarize(rows: list[dict], mode: str, use_rerank: bool, top_k: int, min_confidence: float) -> dict:
+def summarize(
+    rows: list[dict],
+    mode: str,
+    use_rerank: bool,
+    top_k: int,
+    min_confidence: float,
+    reranker_name: str = "heuristic",
+) -> dict:
     answerable = [row for row in rows if row["answerable"]]
     unanswerable = [row for row in rows if not row["answerable"]]
     refusal_correct = [row for row in unanswerable if row["refused"]]
     missed = [row for row in answerable if row["refused"]]
     citation_scores = [row["citation_precision"] for row in answerable if row["citation_precision"] is not None and not row["refused"]]
+    latencies = [row["latency_ms"] for row in rows if row.get("latency_ms") is not None]
     return {
         "mode": mode,
         "use_rerank": use_rerank,
+        "reranker": reranker_name,
         "top_k": top_k,
         "min_confidence": min_confidence,
         "hit@1": statistics.fmean(row["hit@1"] for row in answerable) if answerable else 0.0,
@@ -124,6 +163,8 @@ def summarize(rows: list[dict], mode: str, use_rerank: bool, top_k: int, min_con
         "false_answer_rate": 1 - (len(refusal_correct) / len(unanswerable)) if unanswerable else 0.0,
         "miss_rate": len(missed) / len(answerable) if answerable else 0.0,
         "citation_precision": statistics.fmean(citation_scores) if citation_scores else 0.0,
+        "p50_latency_ms": _percentile(latencies, 0.50),
+        "p95_latency_ms": _percentile(latencies, 0.95),
         "rows": rows,
     }
 
@@ -218,14 +259,30 @@ def main() -> int:
     parser.add_argument("--embedding-dim", type=int, default=4096)
     parser.add_argument(
         "--embedding-provider",
-        choices=["hashing", "openai"],
+        choices=["hashing", "openai", "local"],
         default="hashing",
-        help="hashing=离线确定性（默认，报告可复现）；openai=真实语义向量（读 .env 里的 Key，结果随模型版本漂移）",
+        help=(
+            "hashing=离线确定性（默认，报告可复现）；"
+            "local=本地语义向量（sentence-transformers，无需 Key）；"
+            "openai=远端语义向量（读 .env 里的 Key，结果随模型版本漂移）"
+        ),
     )
     parser.add_argument(
         "--embedding-model",
         default="",
-        help="真实语义向量的模型名，例如 embedding-3；选了 openai 就必须给",
+        help="语义向量的模型名：local 默认 BAAI/bge-small-zh-v1.5；openai 例如 embedding-3（必填）",
+    )
+    parser.add_argument(
+        "--reranker",
+        choices=["noop", "heuristic", "cross-encoder"],
+        default="heuristic",
+        help="重排器：noop=不重排（对照）/ heuristic=启发式（默认）/ cross-encoder=交叉编码器（需 sentence-transformers）",
+    )
+    parser.add_argument("--reranker-model", default="BAAI/bge-reranker-base", help="cross-encoder 使用的模型名")
+    parser.add_argument(
+        "--rerankers",
+        default="",
+        help="额外做重排器网格对比，逗号分隔（如 noop,heuristic,cross-encoder），结果写入报告新章节",
     )
     parser.add_argument("--sweep", action="store_true", help="额外跑一次拒答阈值扫参")
     parser.add_argument("--sensitivity", action="store_true", help="额外跑向量维度与融合权重消融")
@@ -258,18 +315,48 @@ def main() -> int:
         embedder = build_embedder(
             config.embedding, base_url=config.llm.base_url, api_key=config.llm.api_key
         )
+    elif args.embedding_provider == "local":
+        embedder = build_embedder(
+            EmbeddingConfig(provider="local", model=args.embedding_model or DEFAULT_LOCAL_MODEL)
+        )
     index = build_index(knowledge_dir, dim=args.embedding_dim, embedder=embedder)
     total_docs = len({chunk.doc_id for chunk in index.chunks})
     negatives = sum(1 for item in dataset if not item["answerable"])
+    reranker = build_reranker(args.reranker, args.reranker_model)
+    reranker_label = args.reranker + (f"（{args.reranker_model}）" if args.reranker == "cross-encoder" else "")
+    if embedder is None:
+        embedder_label = f"{index.embedder.name}（离线确定性，哈希词法向量）"
+        reproducibility_note = "所有指标均可在无网络、无 API Key 的环境下复现。"
+    elif str(index.embedder.name).startswith("local-"):
+        embedder_label = f"{index.embedder.name}（本地语义向量）"
+        reproducibility_note = (
+            "本次使用本地语义向量（sentence-transformers）。同一模型版本下结果稳定；"
+            "若仓库内提供对应 `eval/fixtures/*.npz`，用 `--embedding-cache` 可完全离线复现。"
+        )
+    else:
+        embedder_label = f"{index.embedder.name}（远端语义向量，数字随模型版本漂移）"
+        reproducibility_note = (
+            "本次的稠密分支用了远端语义向量，**需要 API Key**；"
+            "离线方案见 `--embedding-provider local` 与其 fixture。"
+        )
     print(
         f"知识库：{total_docs} 篇文档 / {len(index.chunks)} 个片段；"
         f"评测集：{len(dataset)} 条查询（划分 {args.split}，负样本 {negatives} 条）；"
-        f"向量模型：{index.embedder.name}"
+        f"向量模型：{index.embedder.name}；重排器：{reranker_label}"
     )
 
     results = []
     for label, mode, use_rerank in CONFIGS:
-        result = evaluate(index, dataset, mode, use_rerank, args.top_k, args.min_confidence)
+        result = evaluate(
+            index,
+            dataset,
+            mode,
+            use_rerank,
+            args.top_k,
+            args.min_confidence,
+            reranker=reranker,
+            reranker_name=args.reranker,
+        )
         result["label"] = label
         results.append(result)
         print(f"  ✓ {label}")
@@ -334,6 +421,31 @@ def main() -> int:
             )
         print("  ✓ 切分策略消融")
 
+    reranker_rows: list[dict] = []
+    if args.rerankers:
+        for name in [part.strip() for part in args.rerankers.split(",") if part.strip()]:
+            candidate = evaluate(
+                index,
+                dataset,
+                "hybrid",
+                True,
+                args.top_k,
+                args.min_confidence,
+                reranker=build_reranker(name, args.reranker_model),
+                reranker_name=name,
+            )
+            reranker_rows.append(
+                {
+                    "reranker": name,
+                    "hit@1": candidate["hit@1"],
+                    "mrr": candidate["mrr"],
+                    "citation": candidate["citation_precision"],
+                    "p50": candidate["p50_latency_ms"],
+                    "p95": candidate["p95_latency_ms"],
+                }
+            )
+        print("  ✓ 重排器网格对比")
+
     if args.dump and results:
         with open(args.dump, "w", encoding="utf-8") as handle:
             for row in results[0]["rows"]:
@@ -350,21 +462,22 @@ def main() -> int:
         f"- 知识库：{total_docs} 篇文档，切分为 {len(index.chunks)} 个片段（recursive 策略）",
         f"- 评测集：{len(dataset)} 条查询（划分：{args.split}），其中可回答 {sum(1 for i in dataset if i['answerable'])} 条，"
         f"不可回答 {sum(1 for i in dataset if not i['answerable'])} 条",
-        f"- 向量模型：{index.embedder.name}"
-        + ("（离线确定性）" if embedder is None else "（真实语义向量，需要 API Key，数字随模型版本漂移）")
-        + "｜生成模型：stub-extractive（离线抽取式）",
+        f"- 向量模型：{embedder_label}｜生成模型：stub-extractive（离线抽取式）",
+        f"- 重排器：{reranker_label}",
         "- 评测命令：`python eval/run_eval.py"
         + f" --top-k {args.top_k} --min-confidence {args.min_confidence}"
-        + (f" --embedding-provider openai --embedding-model {args.embedding_model}" if embedder else "")
+        + (
+            f" --embedding-provider {args.embedding_provider} --embedding-model {args.embedding_model}"
+            if embedder is not None
+            else ""
+        )
         + (" --sweep" if args.sweep else "")
         + (" --sensitivity" if args.sensitivity else "")
+        + (" --strategies" if args.strategies else "")
+        + (f" --rerankers {args.rerankers}" if args.rerankers else "")
         + "`",
         "",
-        (
-            "所有指标均可在无网络、无 API Key 的环境下复现。"
-            if embedder is None
-            else "本次的稠密分支用了真实语义向量，**不可离线复现**；离线基线见不带 `--embedding-provider` 的那次运行。"
-        ),
+        reproducibility_note,
         "",
         f"## 消融对比（top_k={args.top_k}, 拒答阈值={args.min_confidence}）",
         "",
@@ -439,6 +552,31 @@ def main() -> int:
             "注意：本表用的是文档级召回指标，长片段更容易恰好覆盖 gold 文档，",
             "因此 fixed 略好并不等于它更适合生成（片段过长会稀释上下文）。",
             "切分的真实取舍要结合片段级指标与生成质量一起看；这里先把它当作一个待解释的观察。",
+        ]
+
+    if reranker_rows:
+        lines += [
+            "",
+            f"## 重排器对比（混合检索，top_k={args.top_k}）",
+            "",
+            "| 重排器 | R@1 | MRR | 引用准确率 | P50 延迟 | P95 延迟 |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for row in reranker_rows:
+            lines.append(
+                "| {name} | {hit:.3f} | {mrr:.3f} | {citation:.3f} | {p50:.1f} ms | {p95:.1f} ms |".format(
+                    name=row["reranker"],
+                    hit=row["hit@1"],
+                    mrr=row["mrr"],
+                    citation=row["citation"],
+                    p50=row["p50"],
+                    p95=row["p95"],
+                )
+            )
+        lines += [
+            "",
+            "延迟是端到端单题耗时的分位（含 stub 生成）。cross-encoder 的精度增益要放在这条延迟曲线上权衡；",
+            "重排的上界仍由召回决定——候选里没有正确文档时，换多强的重排器都没用。",
         ]
 
     report = "\n".join(lines) + "\n"
