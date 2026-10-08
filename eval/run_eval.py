@@ -6,6 +6,9 @@
 用法：
     python eval/run_eval.py
     python eval/run_eval.py --out eval/report.md --sweep
+    python eval/run_eval.py --sweep --sensitivity --strategies        # 全量消融
+    python eval/run_eval.py --split test                              # 只跑 test 划分
+    python eval/run_eval.py --embedding-cache eval/fixtures/embedding-3.npz  # 离线复现语义向量评测
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from kb_agent.config import AppConfig  # noqa: E402
-from kb_agent.embedder import HashingEmbedder, build_embedder  # noqa: E402
+from kb_agent.embedder import CachedEmbedder, HashingEmbedder, build_embedder  # noqa: E402
 from kb_agent.index import KnowledgeIndex  # noqa: E402
 from kb_agent.ingest import build_chunks, load_documents  # noqa: E402
 from kb_agent.llm import StubLLM  # noqa: E402
@@ -45,10 +48,10 @@ def load_dataset(path: Path) -> list[dict]:
 
 
 def build_index(
-    knowledge_dir: Path, dim: int = 4096, fusion_weights=None, embedder=None
+    knowledge_dir: Path, dim: int = 4096, fusion_weights=None, embedder=None, strategy: str = "recursive"
 ) -> KnowledgeIndex:
     documents = load_documents(knowledge_dir)
-    chunks = build_chunks(documents, strategy="recursive")
+    chunks = build_chunks(documents, strategy=strategy)
     index = KnowledgeIndex.build(chunks, embedder or HashingEmbedder(dim=dim))
     if fusion_weights:
         index.fusion_weights = list(fusion_weights)
@@ -85,6 +88,7 @@ def evaluate(
         rows.append(
             {
                 "id": item["id"],
+                "question": item["question"],
                 "answerable": item["answerable"],
                 "refused": answer.answer.strip() == REFUSAL_TEXT,
                 "retrieved": retrieved,
@@ -221,13 +225,27 @@ def main() -> int:
     )
     parser.add_argument("--sweep", action="store_true", help="额外跑一次拒答阈值扫参")
     parser.add_argument("--sensitivity", action="store_true", help="额外跑向量维度与融合权重消融")
+    parser.add_argument("--strategies", action="store_true", help="额外跑切分策略消融（recursive / fixed / parent_child）")
+    parser.add_argument("--split", choices=["all", "dev", "test"], default="all", help="只评测某个划分")
+    parser.add_argument(
+        "--embedding-cache",
+        default="",
+        help="离线向量 fixture（npz，由 scripts/make_embedding_fixture.py 生成）：用它替代远端调用，让语义向量评测可复现",
+    )
+    parser.add_argument("--dump", default="", help="把首选配置的逐条结果写成 JSONL，便于定位失败样本")
     parser.add_argument("--out", default=str(ROOT / "eval" / "report.md"))
     args = parser.parse_args()
 
     dataset = load_dataset(Path(args.dataset))
+    if args.split != "all":
+        dataset = [item for item in dataset if item.get("split", "dev") == args.split]
+        if not dataset:
+            raise SystemExit(f"划分 {args.split} 里没有任何用例")
     knowledge_dir = Path(args.knowledge_dir)
     embedder = None
-    if args.embedding_provider == "openai":
+    if args.embedding_cache:
+        embedder = CachedEmbedder(args.embedding_cache)
+    elif args.embedding_provider == "openai":
         if not args.embedding_model:
             raise SystemExit("--embedding-provider openai 需要同时给 --embedding-model（例如 embedding-3）")
         config = AppConfig.from_env()
@@ -238,9 +256,11 @@ def main() -> int:
         )
     index = build_index(knowledge_dir, dim=args.embedding_dim, embedder=embedder)
     total_docs = len({chunk.doc_id for chunk in index.chunks})
+    negatives = sum(1 for item in dataset if not item["answerable"])
     print(
         f"知识库：{total_docs} 篇文档 / {len(index.chunks)} 个片段；"
-        f"评测集：{len(dataset)} 条查询；向量模型：{index.embedder.name}"
+        f"评测集：{len(dataset)} 条查询（划分 {args.split}，负样本 {negatives} 条）；"
+        f"向量模型：{index.embedder.name}"
     )
 
     results = []
@@ -291,6 +311,31 @@ def main() -> int:
             )
         print("  ✓ 向量维度与融合权重消融")
 
+    strategy_rows: list[dict] = []
+    if args.strategies:
+        for strategy in ("recursive", "fixed", "parent_child"):
+            candidate = build_index(knowledge_dir, dim=args.embedding_dim, embedder=embedder, strategy=strategy)
+            hybrid = evaluate(candidate, dataset, "hybrid", True, args.top_k, args.min_confidence)
+            bm25 = evaluate(candidate, dataset, "bm25", True, args.top_k, args.min_confidence)
+            vector = evaluate(candidate, dataset, "vector", True, args.top_k, args.min_confidence)
+            strategy_rows.append(
+                {
+                    "strategy": strategy,
+                    "chunks": len(candidate.chunks),
+                    "hybrid": hybrid["hit@1"],
+                    "hybrid_mrr": hybrid["mrr"],
+                    "bm25": bm25["hit@1"],
+                    "vector": vector["hit@1"],
+                }
+            )
+        print("  ✓ 切分策略消融")
+
+    if args.dump and results:
+        with open(args.dump, "w", encoding="utf-8") as handle:
+            for row in results[0]["rows"]:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        print(f"逐条结果已写入 {args.dump}")
+
     table = format_table(results, args.top_k)
     print("\n" + table + "\n")
 
@@ -299,7 +344,7 @@ def main() -> int:
         "",
         f"- 生成时间：{datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M:%S %z')}",
         f"- 知识库：{total_docs} 篇文档，切分为 {len(index.chunks)} 个片段（recursive 策略）",
-        f"- 评测集：{len(dataset)} 条查询，其中可回答 {sum(1 for i in dataset if i['answerable'])} 条，"
+        f"- 评测集：{len(dataset)} 条查询（划分：{args.split}），其中可回答 {sum(1 for i in dataset if i['answerable'])} 条，"
         f"不可回答 {sum(1 for i in dataset if not i['answerable'])} 条",
         f"- 向量模型：{index.embedder.name}"
         + ("（离线确定性）" if embedder is None else "（真实语义向量，需要 API Key，数字随模型版本漂移）")
@@ -361,9 +406,35 @@ def main() -> int:
                 "融合权重能起多大作用，取决于两路分支的质量差距。"
             ),
             "",
-            "> 方法学说明：维度与权重消融在完整评测集上完成，没有留出独立验证集。"
-            "50 条查询的规模下这种敏感性分析足以支撑方向性结论，但不适合用来精调超参；"
-            "生产上应当划分 dev/test，在 dev 上选型、在 test 上报告。",
+            "> 方法学说明：评测集带 `split` 字段（q001–q075 为 dev，q076–q150 为 test）。"
+            "本报告默认跑全量集以便与历史数字对比；选超参请用 `--split dev`，对外报告用 `--split test`。"
+            "当前规模下敏感性分析只用于方向性判断，不适合精调超参。",
+        ]
+
+    if strategy_rows:
+        lines += [
+            "",
+            "## 切分策略消融",
+            "",
+            "| 切分策略 | 片段数 | 纯 BM25+重排 R@1 | 纯向量+重排 R@1 | 混合+重排 R@1 | 混合+重排 MRR |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for row in strategy_rows:
+            lines.append(
+                "| {strategy} | {chunks} | {bm25:.3f} | {vector:.3f} | {hybrid:.3f} | {mrr:.3f} |".format(
+                    strategy=row["strategy"],
+                    chunks=row["chunks"],
+                    bm25=row["bm25"],
+                    vector=row["vector"],
+                    hybrid=row["hybrid"],
+                    mrr=row["hybrid_mrr"],
+                )
+            )
+        lines += [
+            "",
+            "注意：本表用的是文档级召回指标，长片段更容易恰好覆盖 gold 文档，",
+            "因此 fixed 略好并不等于它更适合生成（片段过长会稀释上下文）。",
+            "切分的真实取舍要结合片段级指标与生成质量一起看；这里先把它当作一个待解释的观察。",
         ]
 
     report = "\n".join(lines) + "\n"
