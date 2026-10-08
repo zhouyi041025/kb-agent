@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Protocol, Sequence
 
 import numpy as np
@@ -91,3 +92,30 @@ def build_embedder(config: EmbeddingConfig, *, base_url: str = "", api_key: str 
             dim=config.dim,
         )
     return HashingEmbedder(dim=config.dim)
+
+
+class CachedEmbedder:
+    """从离线 fixture（texts + vectors 的 npz）读取向量。
+
+    用途：把"真实语义向量"的评测变成可复现的离线实验。fixture 由
+    scripts/make_embedding_fixture.py 生成一次并入库存档，之后任何人
+    clone 下来都能复现同一批语义向量下的评测数字。
+
+    fixture 里查不到的文本直接报错，而不是悄悄回退到词法向量 ——
+    两种向量混进同一份报告比报错更危险。
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        data = np.load(path, allow_pickle=False)
+        self._vectors = {text: vector for text, vector in zip(data["texts"].tolist(), data["vectors"])}
+        self.dim = int(data["vectors"].shape[1])
+        self.name = str(data["model"]) if "model" in data else Path(path).stem
+
+    def encode(self, texts: Sequence[str]) -> np.ndarray:
+        missing = [text for text in texts if text not in self._vectors]
+        if missing:
+            raise KeyError(
+                f"离线向量 fixture 缺少 {len(missing)} 条文本的向量，"
+                f"请用 scripts/make_embedding_fixture.py 重新生成（首个缺失：{missing[0][:40]}...）"
+            )
+        return np.stack([self._vectors[text] for text in texts]).astype(np.float32)
