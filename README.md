@@ -226,7 +226,7 @@ flowchart TB
 | `KB_LLM_PROVIDER` | `stub` | `stub` 离线抽取式；`openai` 走任意 OpenAI 兼容端点 |
 | `KB_LLM_BASE_URL` / `KB_LLM_API_KEY` / `KB_LLM_MODEL` | — | DeepSeek、Qwen、GLM、vLLM 自建服务都兼容 |
 | `KB_EMBEDDING_PROVIDER` | `hashing` | `hashing` 离线确定性；`openai` 走真实语义向量 |
-| `KB_EMBEDDING_DIM` | `4096` | 哈希向量维度，低于 2048 会因碰撞拖累检索 |
+| `KB_EMBEDDING_DIM` | `auto` | 向量维度；`auto` 时哈希向量用 4096、远端模型按实际返回维度自适应（无需手动设置；哈希维度低于 2048 会因碰撞拖累检索） |
 | `KB_RETRIEVAL_MODE` | `hybrid` | `bm25` / `vector` / `hybrid` |
 | `KB_MIN_CONFIDENCE` | `0.45` | 拒答阈值，0 表示关闭门控 |
 

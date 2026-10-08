@@ -198,9 +198,14 @@ class KnowledgeIndex:
                 f"索引是用 {meta['embedder']} 建的，当前 embedder 是 {embedder.name}，请重建索引"
             )
         matrix = np.load(directory / "vectors.npy")
-        if matrix.shape[1] != embedder.dim:
+        expected_dim = getattr(embedder, "dim", None)
+        if expected_dim and matrix.shape[1] != expected_dim:
             raise ValueError(
-                f"索引向量维度 {matrix.shape[1]} 与当前 embedder 维度 {embedder.dim} 不一致，请重建索引"
+                f"索引向量维度 {matrix.shape[1]} 与当前 embedder 维度 {expected_dim} 不一致，请重建索引"
             )
+        if not expected_dim:
+            # 远端向量模型配置为 auto 时，维度只有编码后才知道；加载以索引文件为准，
+            # 否则每次启动都会误判"维度不一致"并触发一次全量重建（重复调用 embedding API）。
+            embedder.dim = int(matrix.shape[1])
         index.vectors.fit(chunk_ids, matrix)
         return index
