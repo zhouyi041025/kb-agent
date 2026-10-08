@@ -2,6 +2,17 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] - 2026-10-09
+
+### Added
+- `SentenceTransformerEmbedder`（可选依赖 `kb-agent[local]`）与 `--embedding-provider local`：本地语义向量，无需 API Key
+- `eval/run_eval.py`：`--reranker {noop,heuristic,cross-encoder}`、`--rerankers` 网格对比、逐条延迟与 P50/P95 统计
+- 离线向量 fixture `eval/fixtures/bge-small-zh-v1.5.npz`（0.55 MB）：`--embedding-cache` 无模型、无 Key 复现语义向量列
+- 四象限报告 `eval/report-reranker-quadrant.md`（重排器 × 稠密分支质量）
+
+### Changed
+- README 增补"重排器 × 稠密分支质量"章节；cross-encoder TODO 标记完成
+
 ## [0.2.0] - 2026-10-08
 
 ### Fixed
