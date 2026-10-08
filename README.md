@@ -105,6 +105,26 @@ python eval/run_eval.py --embedding-provider openai --embedding-model embedding-
 不能离线复现；离线基线 [`eval/report.md`](eval/report.md) 不受影响。
 可复现的教训是：**结论要连"在什么组件质量下成立"一起说，否则换掉一个组件就全都失效。**
 
+### 重排器 × 稠密分支质量（150 条集 + 本地模型复测）
+
+用本地语义向量（`BAAI/bge-small-zh-v1.5`，512 维，无需 API Key）在 150 条评测集上重做了重排对比，
+并补上 cross-encoder 一档（完整报告：[`eval/report-reranker-quadrant.md`](eval/report-reranker-quadrant.md)）：
+
+| 稠密分支 | noop R@1 | 启发式 R@1 | cross-encoder R@1 | cross-encoder P50 |
+| --- | --- | --- | --- | --- |
+| 哈希向量 4096（词法） | 0.908 | 0.925 | **0.967** | 899.5 ms |
+| 本地语义向量（bge-small-zh） | 0.908 | 0.933 | **0.967** | 930.9 ms |
+
+- cross-encoder 在两种分支下都把 R@1 顶到 0.967（+0.059），是最稳的单点收益；代价是 P50 约 0.9 秒（CPU、20 候选/题）。
+- 启发式重排两列都是正收益（+0.017 / +0.025），但当稠密分支足够强时会翻负——上面 embedding-3 的 −0.024 就是这个拐点的另一侧。**重排器的价值要连"稠密分支有多强"一起说。**
+- 语义向量列还顺带把拒答正确率从 0.800 提到 0.933。
+
+离线复现（0.5 MB fixture，不需要下载模型或 Key）：
+
+```bash
+python eval/run_eval.py --embedding-cache eval/fixtures/bge-small-zh-v1.5.npz --rerankers noop,heuristic
+```
+
 ### 接上真实模型之后
 
 上面的评测全部跑在离线 stub 上 —— 那是为了可复现，不是为了效果。把生成模型换成真实模型
@@ -193,6 +213,7 @@ curl -X POST http://127.0.0.1:8000/ask -H "Content-Type: application/json" \
 ```bash
 python eval/run_eval.py --sweep --sensitivity --strategies
 python eval/run_eval.py --split test        # 只跑测试划分（对外报告用）
+python eval/run_eval.py --embedding-provider local --rerankers noop,heuristic,cross-encoder  # 语义向量 + 重排对比（需可选依赖）
 ```
 
 ### 压测
@@ -310,10 +331,12 @@ kb-agent/
 │   ├── run_eval.py      消融、阈值扫参、敏感性分析
 │   ├── run_cache_risk.py 语义缓存误命中风险评估（离线可跑）
 │   ├── cache_risk.md    风险报告（生成）
+│   ├── fixtures/        离线向量 fixture（bge-small-zh，语义向量列可离线复现）
+│   ├── report-reranker-quadrant.md  重排器四象限报告
 │   └── report.md        生成的评测报告
 ├── data/knowledge/      18 篇知识库文档
 ├── scripts/             建索引、压测、生成离线向量 fixture
-└── tests/               55 个单元测试
+└── tests/               77 个单元测试
 ```
 
 ## 设计取舍
@@ -346,7 +369,8 @@ kb-agent/
 ## 下一步
 
 - [x] 接入真实语义向量，复测混合检索是否反超单路（已完成，见「换成真实语义向量之后」）
-- [ ] 稠密分支变强后重排换成 cross-encoder（启发式重排在语义向量下已是负收益，接口已留好）
+- [x] cross-encoder 重排对比实验（见 `eval/report-reranker-quadrant.md`：两种向量下 R@1 均 0.967，P50 约 0.9s）
+- [ ] cross-encoder 提速：ONNX / 量化压 P95，或做"分数阈值 + 双档重排"的成本控制
 - [ ] 文档级权限过滤与多租户隔离
 - [ ] 语义缓存（当前是精确匹配 LRU，语义缓存能覆盖措辞不同的重复提问，但要承担误判风险）
 - [ ] 把切分策略也纳入消融（fixed / recursive / parent-child 三选一目前靠经验）

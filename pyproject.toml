@@ -20,6 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+# 本地语义向量 + cross-encoder 重排实验用；默认安装（离线哈希向量）不需要它们
+local = ["sentence-transformers>=2.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,9 +1,11 @@
 """向量化器的边界行为，重点是离线 fixture（CachedEmbedder）。"""
 
+import builtins
+
 import numpy as np
 import pytest
 
-from kb_agent.embedder import CachedEmbedder, HashingEmbedder
+from kb_agent.embedder import CachedEmbedder, HashingEmbedder, SentenceTransformerEmbedder
 
 
 def make_fixture(tmp_path):
@@ -34,3 +36,17 @@ def test_cached_embedder_fails_loudly_on_missing_text(tmp_path):
 
 def test_hashing_embedder_defaults_to_4096():
     assert HashingEmbedder().name == "hashing-4096"
+
+
+def test_local_embedder_gives_actionable_error_without_dependency(monkeypatch):
+    """没装 sentence-transformers 时要给可执行的安装提示，而不是裸 ImportError。"""
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "sentence_transformers":
+            raise ImportError("simulated missing dependency")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(RuntimeError, match="sentence-transformers"):
+        SentenceTransformerEmbedder()
