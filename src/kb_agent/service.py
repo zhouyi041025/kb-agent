@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from .cache import QueryCache
+from .cache import QueryCache, SemanticCache
 from .config import AppConfig
 from .embedder import build_embedder
 from .index import KnowledgeIndex
@@ -96,6 +96,14 @@ class KbService:
         self.reranker = reranker or HeuristicReranker()
         self.rewriter = rewriter or HeuristicRewriter()
         self.cache = cache or QueryCache(max_size=self.config.cache_size)
+        self.semantic_cache = (
+            SemanticCache(
+                max_size=self.config.semantic_cache_size,
+                threshold=self.config.semantic_cache_threshold,
+            )
+            if self.config.semantic_cache
+            else None
+        )
         self.stats = ServiceStats()
         self._retriever: Retriever | None = None
 
@@ -160,11 +168,27 @@ class KbService:
         use_rerank = self.config.retrieval.use_rerank if use_rerank is None else use_rerank
 
         cache_key = QueryCache.make_key(question, mode, top_k, use_rerank, history)
+        scope = QueryCache.make_scope(mode, top_k, use_rerank, history)
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 self.stats.requests += 1
                 cached.cached = True
+                cached.cache_kind = "exact"
+                self.stats.latency_ms_total += cached.latency_ms
+                return cached
+
+        query_vector = None
+        if use_cache and self.semantic_cache is not None:
+            # 语义缓存要比精确缓存多花一次编码：哈希向量是纯计算，远端向量是一次廉价调用，
+            # 换来的是"换个说法问同一件事"也能直接命中。误命中风险与阈值的关系见
+            # eval/run_cache_risk.py，默认阈值取高（0.95）偏向保守。
+            query_vector = self.embedder.encode([question])[0]
+            cached, _score = self.semantic_cache.lookup(scope, query_vector)
+            if cached is not None:
+                self.stats.requests += 1
+                cached.cached = True
+                cached.cache_kind = "semantic"
                 self.stats.latency_ms_total += cached.latency_ms
                 return cached
 
@@ -182,7 +206,7 @@ class KbService:
             # 拒答也要把召回结果带回去：前端可以展示"找到了这些资料但依据不足"，
             # 同时保证评测里的召回指标不受拒答策略影响（两件事必须能分开度量）。
             answer = Answer(question=question, answer=REFUSAL_TEXT, contexts=contexts, spans=tracer.spans)
-            self._finalize(answer, cache_key, use_cache)
+            self._finalize(answer, cache_key, use_cache, scope=scope, query_vector=query_vector)
             return answer
 
         messages = build_messages(question, contexts, history)
@@ -208,10 +232,18 @@ class KbService:
             cost_usd=result.cost_usd,
             spans=tracer.spans,
         )
-        self._finalize(answer, cache_key, use_cache)
+        self._finalize(answer, cache_key, use_cache, scope=scope, query_vector=query_vector)
         return answer
 
-    def _finalize(self, answer: Answer, cache_key: str, use_cache: bool) -> None:
+    def _finalize(
+        self,
+        answer: Answer,
+        cache_key: str,
+        use_cache: bool,
+        *,
+        scope: str | None = None,
+        query_vector=None,
+    ) -> None:
         self.stats.requests += 1
         self.stats.latency_ms_total += answer.latency_ms
         self.stats.prompt_tokens += answer.prompt_tokens
@@ -223,6 +255,8 @@ class KbService:
             self.stats.refusals += 1
         if use_cache and not answer.cached:
             self.cache.set(cache_key, answer)
+            if self.semantic_cache is not None and scope is not None and query_vector is not None:
+                self.semantic_cache.set(scope, query_vector, answer)
 
     @staticmethod
     def _resolve_citations(text: str, contexts: Sequence[RetrievedChunk]) -> list[str]:
@@ -254,4 +288,13 @@ class KbService:
         return idf_weighted_coverage(query_terms, union_terms, self.index.bm25.idf)
 
     def stats_payload(self) -> dict:
-        return self.stats.as_dict(self.cache)
+        payload = self.stats.as_dict(self.cache)
+        if self.semantic_cache is not None:
+            payload["semantic_cache"] = {
+                "size": self.semantic_cache.size,
+                "hits": self.semantic_cache.hits,
+                "misses": self.semantic_cache.misses,
+                "hit_rate": self.semantic_cache.hit_rate,
+                "threshold": self.semantic_cache.threshold,
+            }
+        return payload

@@ -113,6 +113,17 @@ class AppConfig:
     index_dir: str = ".kb_index"
     knowledge_dir: str = "data/knowledge"
     cache_size: int = 512
+    # 接口鉴权：留空表示不鉴权（本地与演示默认），生产上配 KB_API_KEY 后
+    # /ask、/ingest、/stats 需要 Bearer Token；/health 与 /metrics 保持开放给探活与抓取。
+    api_key: str = ""
+    # 单进程并发上限与排队超时：避免一次压测把上游模型打进限流（429）后整体雪崩
+    max_concurrency: int = 4
+    queue_timeout_seconds: float = 10.0
+    # 语义缓存默认关闭：省一次编码、但存在"近义但不同的问题命中错误答案"的风险，
+    # 离线量化见 eval/run_cache_risk.py，阈值越高越稳、命中率越低。
+    semantic_cache: bool = False
+    semantic_cache_size: int = 256
+    semantic_cache_threshold: float = 0.95
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -141,4 +152,10 @@ class AppConfig:
             index_dir=_env_str("KB_INDEX_DIR", ".kb_index"),
             knowledge_dir=_env_str("KB_KNOWLEDGE_DIR", "data/knowledge"),
             cache_size=_env_int("KB_CACHE_SIZE", 512),
+            api_key=_env_str("KB_API_KEY", ""),
+            max_concurrency=max(1, _env_int("KB_MAX_CONCURRENCY", 4)),
+            queue_timeout_seconds=float(_env_str("KB_QUEUE_TIMEOUT_SECONDS", "10")),
+            semantic_cache=_env_bool("KB_SEMANTIC_CACHE", False),
+            semantic_cache_size=_env_int("KB_SEMANTIC_CACHE_SIZE", 256),
+            semantic_cache_threshold=float(_env_str("KB_SEMANTIC_CACHE_THRESHOLD", "0.95")),
         )

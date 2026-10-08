@@ -166,7 +166,7 @@ curl -X POST http://127.0.0.1:8000/ask -H "Content-Type: application/json" \
 | `GET /` | 问答控制台（离线可用） |
 | `GET /docs` | 中文接口文档，可在线"试一下"（离线可用） |
 | `GET /swagger` | 原版 Swagger UI（英文，需联网） |
-| `POST /ask` | 问答，返回答案、引用、耗时、成本、降级标记 |
+| `POST /ask` | 问答，返回答案、引用、耗时、成本、降级标记与缓存类型（`cache_kind`：空 / `exact` / `semantic`） |
 | `POST /ingest` | 重建索引 |
 | `GET /health` | 健康检查（含片段数、向量模型、生成模型） |
 | `GET /stats` | 累计请求数、降级次数、拒答次数、token、成本、平均延迟、缓存命中率 |
@@ -183,6 +183,14 @@ python eval/run_eval.py --sweep --sensitivity
 ```bash
 python scripts/load_test.py --url http://127.0.0.1:8000 --concurrency 8 --requests 200
 ```
+
+离线基线（stub 生成 + 哈希向量 + 默认并发上限 4，2026-10-08 实测）：
+
+| 并发 | 请求 | 失败 | QPS | 平均 | P50 | P95 | P99 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 8 | 120 | 0 | 117.3 | 66.1 ms | 61.4 ms | 144.8 ms | 152.3 ms |
+
+平均与 P95 的差距主要来自并发上限排队。接真实模型后延迟由上游决定，这个基线用来对照“服务层自身的开销”。
 
 ## 架构
 
@@ -211,6 +219,7 @@ flowchart TB
 | 置信度门控 | 检索依据不足直接拒答，不调用模型 | 宁可说不知道，也不要编答案；同时省一次调用 |
 | 引用溯源 | 答案里的 `[1][2]` 映射回具体片段 | 用户可核查，也是评测引用准确率的基础 |
 | 查询缓存 | LRU，键包含检索参数与对话历史签名 | 高频重复问题直接复用，多轮场景不会串答案 |
+| 语义缓存 | 近义问题命中同一条答案（默认关闭，`KB_SEMANTIC_CACHE=1` 打开） | 措辞不同的重复提问不必重跑链路；误命中风险先用 `eval/run_cache_risk.py` 量化再定阈值 |
 | 链路追踪 | 每阶段耗时记入 `spans` | 定位"慢在检索还是慢在生成" |
 | 成本核算 | 记录 token 与估算金额，按接口聚合 | 只看总量无法定位成本异常来源 |
 | 索引校验 | 元数据记录向量模型与维度，加载时校验 | 换模型后忘重建索引会静默给出错误结果 |
@@ -229,6 +238,9 @@ flowchart TB
 | `KB_EMBEDDING_DIM` | `auto` | 向量维度；`auto` 时哈希向量用 4096、远端模型按实际返回维度自适应（无需手动设置；哈希维度低于 2048 会因碰撞拖累检索） |
 | `KB_RETRIEVAL_MODE` | `hybrid` | `bm25` / `vector` / `hybrid` |
 | `KB_MIN_CONFIDENCE` | `0.45` | 拒答阈值，0 表示关闭门控 |
+| `KB_API_KEY` | 空 | 设置后 `/ask`、`/ingest`、`/stats` 需要 `Authorization: Bearer <key>`；留空不鉴权（本地/CI 默认） |
+| `KB_MAX_CONCURRENCY` | `4` | 单进程并发上限；超出排队，`KB_QUEUE_TIMEOUT_SECONDS`（默认 10 秒）超时返回 503 |
+| `KB_SEMANTIC_CACHE` | `0` | 语义缓存开关；开启后近义问题也可能命中缓存。阈值 `KB_SEMANTIC_CACHE_THRESHOLD`（默认 0.95）、容量 `KB_SEMANTIC_CACHE_SIZE`（默认 256） |
 
 切换到真实模型（不需要改任何代码）：
 
@@ -279,6 +291,8 @@ kb-agent/
 ├── eval/
 │   ├── dataset.jsonl    50 条评测查询（含 8 条负样本）
 │   ├── run_eval.py      消融、阈值扫参、敏感性分析
+│   ├── run_cache_risk.py 语义缓存误命中风险评估（离线可跑）
+│   ├── cache_risk.md    风险报告（生成）
 │   └── report.md        生成的评测报告
 ├── data/knowledge/      18 篇知识库文档
 ├── scripts/             建索引、压测

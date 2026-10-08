@@ -56,6 +56,8 @@ class Answer:
     contexts: list[RetrievedChunk] = field(default_factory=list)
     degraded: bool = False
     cached: bool = False
+    # 命中缓存的类型：""（未命中）/ "exact"（完全相同的问题）/ "semantic"（近义问题）
+    cache_kind: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
