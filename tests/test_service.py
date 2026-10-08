@@ -91,6 +91,17 @@ def test_cache_hit_on_repeated_question():
     assert service.cache.hits == 1
 
 
+def test_cache_hit_returns_a_copy_not_the_shared_object():
+    """回归：命中缓存返回副本，旧答案对象不应被缓存复用改掉标记。"""
+    service = make_service()
+    first = service.answer(QUESTION)
+    second = service.answer(QUESTION)
+
+    assert second.cached is True
+    assert second is not first
+    assert first.cached is False
+
+
 def test_semantic_cache_hits_on_punctuation_variant():
     """精确缓存只认一模一样的字符串；换个标点再问一遍应由语义缓存接住。"""
     config = AppConfig()
@@ -105,6 +116,8 @@ def test_semantic_cache_hits_on_punctuation_variant():
     second = service.answer(QUESTION + "？")
     assert second.cached is True
     assert second.cache_kind == "semantic"
+    assert second is not first
+    assert first.cached is False
     assert second.answer == first.answer
     assert service.semantic_cache is not None and service.semantic_cache.hits == 1
 

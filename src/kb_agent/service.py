@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .cache import QueryCache, SemanticCache
@@ -173,10 +173,11 @@ class KbService:
             cached = self.cache.get(cache_key)
             if cached is not None:
                 self.stats.requests += 1
-                cached.cached = True
-                cached.cache_kind = "exact"
-                self.stats.latency_ms_total += cached.latency_ms
-                return cached
+                # 返回副本：缓存的答案对象会被复用，就地改标记会把调用方
+                # 手里"第一次的答案"也一起改成 cached=True（别名的坑）。
+                hit = replace(cached, cached=True, cache_kind="exact")
+                self.stats.latency_ms_total += hit.latency_ms
+                return hit
 
         query_vector = None
         if use_cache and self.semantic_cache is not None:
@@ -187,10 +188,9 @@ class KbService:
             cached, _score = self.semantic_cache.lookup(scope, query_vector)
             if cached is not None:
                 self.stats.requests += 1
-                cached.cached = True
-                cached.cache_kind = "semantic"
-                self.stats.latency_ms_total += cached.latency_ms
-                return cached
+                hit = replace(cached, cached=True, cache_kind="semantic")
+                self.stats.latency_ms_total += hit.latency_ms
+                return hit
 
         tracer = Tracer()
         with tracer.span("rewrite"):
