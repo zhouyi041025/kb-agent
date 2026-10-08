@@ -126,7 +126,7 @@ class AppConfig:
     semantic_cache_threshold: float = 0.95
 
     @classmethod
-    def from_env(cls) -> "AppConfig":
+    def from_env(cls) -> AppConfig:
         load_env_file()
         return cls(
             llm=LLMConfig(

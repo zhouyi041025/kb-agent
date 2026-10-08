@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from .cache import QueryCache, SemanticCache
 from .config import AppConfig
@@ -18,8 +18,8 @@ from .rerank import HeuristicReranker, Reranker, idf_weighted_coverage
 from .retriever import Retriever
 from .rewrite import HeuristicRewriter, QueryRewriter
 from .schemas import Answer, RetrievedChunk
-from .tracing import Tracer
 from .text import tokenize
+from .tracing import Tracer
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 _CITATION_LABEL = r"(?:编号|引用|来源|文档|资料|参考)"

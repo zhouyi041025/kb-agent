@@ -1,6 +1,11 @@
 import os
 
-from kb_agent.config import DEFAULT_MIN_CONFIDENCE, AppConfig, RetrievalConfig, load_env_file
+from kb_agent.config import (
+    DEFAULT_MIN_CONFIDENCE,
+    AppConfig,
+    RetrievalConfig,
+    load_env_file,
+)
 from kb_agent.embedder import HashingEmbedder
 
 
